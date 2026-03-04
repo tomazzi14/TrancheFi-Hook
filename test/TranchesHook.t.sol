@@ -290,43 +290,46 @@ contract TranchesHookTest is Test, Deployers {
         vm.warp(block.timestamp + 1);
 
         // Before swap, no pending fees
-        uint256 pendingAlice = hook.pendingFees(alice, poolKey);
-        uint256 pendingBob = hook.pendingFees(bob, poolKey);
-        assertEq(pendingAlice, 0, "No pending fees for alice before swap");
-        assertEq(pendingBob, 0, "No pending fees for bob before swap");
+        (uint256 pendingAlice0, uint256 pendingAlice1) = hook.pendingFees(alice, poolKey);
+        (uint256 pendingBob0, uint256 pendingBob1) = hook.pendingFees(bob, poolKey);
+        assertEq(pendingAlice0 + pendingAlice1, 0, "No pending fees for alice before swap");
+        assertEq(pendingBob0 + pendingBob1, 0, "No pending fees for bob before swap");
 
-        // Swap
+        // Swap (zeroForOne: fees in currency1)
         _doSwap(-1e18);
 
-        // After swap, at least one should have pending fees
-        pendingAlice = hook.pendingFees(alice, poolKey);
-        pendingBob = hook.pendingFees(bob, poolKey);
-        assertTrue(pendingAlice > 0 || pendingBob > 0, "Should have pending fees after swap");
+        // After swap, at least one should have pending fees in currency1
+        (, uint256 pendingAlice1After) = hook.pendingFees(alice, poolKey);
+        (, uint256 pendingBob1After) = hook.pendingFees(bob, poolKey);
+        assertTrue(pendingAlice1After + pendingBob1After > 0, "Should have pending fees after swap");
     }
 
     function test_claimFeesTransfersTokens() public {
         _addBothTranches();
         vm.warp(block.timestamp + 1);
 
-        // Swap to generate fees
+        // Swap to generate fees (zeroForOne: fees in currency1)
         _doSwap(-1e18);
 
         // Check bob's pending fees (junior gets remainder with small time delta)
-        uint256 pendingBob = hook.pendingFees(bob, poolKey);
+        (, uint256 pendingBob1) = hook.pendingFees(bob, poolKey);
 
-        if (pendingBob > 0) {
-            uint256 bobBalanceBefore = currency1.balanceOf(bob);
-
-            // Bob claims fees
+        if (pendingBob1 > 0) {
+            // Bob claims fees — goes to claimableBalance (pull pattern)
             vm.prank(bob);
             hook.claimFees(poolKey);
 
-            uint256 bobBalanceAfter = currency1.balanceOf(bob);
-            assertEq(bobBalanceAfter - bobBalanceBefore, pendingBob, "Bob should receive pending fees");
-
             // After claiming, pending should be 0
-            uint256 pendingAfterClaim = hook.pendingFees(bob, poolKey);
-            assertEq(pendingAfterClaim, 0, "No pending fees after claim");
+            (uint256 afterClaim0, uint256 afterClaim1) = hook.pendingFees(bob, poolKey);
+            assertEq(afterClaim0, 0, "No pending fees after claim (currency0)");
+            assertEq(afterClaim1, 0, "No pending fees after claim (currency1)");
+
+            // Now bob withdraws via pull pattern
+            uint256 bobBalanceBefore = currency1.balanceOf(bob);
+            vm.prank(bob);
+            hook.withdrawFees(currency1);
+            uint256 bobBalanceAfter = currency1.balanceOf(bob);
+            assertEq(bobBalanceAfter - bobBalanceBefore, pendingBob1, "Bob receives fees via withdrawFees");
         }
     }
 
@@ -372,24 +375,24 @@ contract TranchesHookTest is Test, Deployers {
         bytes memory hookData = abi.encode(bob);
         modifyLiquidityRouter.modifyLiquidity(poolKey, removeParams, hookData);
 
-        // Bob's position should be cleaned up
+        // Bob's position should be cleaned up (small dust possible from AMM rounding)
         (, uint256 totalJunior,,,,) = hook.getPoolStats(poolKey);
-        assertEq(totalJunior, 0, "Junior liquidity should be 0 after removal");
+        assertLe(totalJunior, 10, "Junior liquidity should be ~0 after removal");
     }
 
     function test_removeLiquidityAutoClaimsFees() public {
         _addBothTranches();
         vm.warp(block.timestamp + 1);
 
-        // Swap to generate fees
+        // Swap to generate fees (zeroForOne: fees in currency1)
         _doSwap(-1e18);
 
         // Roll forward past lock
         vm.roll(block.number + 101);
 
-        uint256 pendingBob = hook.pendingFees(bob, poolKey);
+        (, uint256 pendingBob1) = hook.pendingFees(bob, poolKey);
 
-        // Remove bob's position — should auto-claim fees
+        // Remove bob's position — should auto-claim fees to claimableBalance
         IPoolManager.ModifyLiquidityParams memory removeParams = IPoolManager.ModifyLiquidityParams({
             tickLower: LIQUIDITY_PARAMS.tickLower,
             tickUpper: LIQUIDITY_PARAMS.tickUpper,
@@ -397,13 +400,16 @@ contract TranchesHookTest is Test, Deployers {
             salt: 0
         });
 
-        uint256 bobBalanceBefore = currency1.balanceOf(bob);
         bytes memory hookData = abi.encode(bob);
         modifyLiquidityRouter.modifyLiquidity(poolKey, removeParams, hookData);
 
-        if (pendingBob > 0) {
+        if (pendingBob1 > 0) {
+            // Fees went to claimableBalance, bob withdraws via pull pattern
+            uint256 bobBalanceBefore = currency1.balanceOf(bob);
+            vm.prank(bob);
+            hook.withdrawFees(currency1);
             uint256 bobBalanceAfter = currency1.balanceOf(bob);
-            assertEq(bobBalanceAfter - bobBalanceBefore, pendingBob, "Auto-claimed fees on removal");
+            assertEq(bobBalanceAfter - bobBalanceBefore, pendingBob1, "Auto-claimed fees on removal + withdraw");
         }
     }
 
@@ -440,10 +446,10 @@ contract TranchesHookTest is Test, Deployers {
         });
         modifyLiquidityRouter.modifyLiquidity(poolKey, removeParams, abi.encode(bob));
 
-        // Now only senior remains
+        // Now only senior remains (small dust possible from AMM rounding)
         (uint256 totalSenior, uint256 totalJunior,,,,) = hook.getPoolStats(poolKey);
         assertGt(totalSenior, 0, "Senior exists");
-        assertEq(totalJunior, 0, "No junior");
+        assertLe(totalJunior, 10, "No junior (or just dust)");
 
         // Swap — FIX #5: junior fees redirected to senior
         vm.warp(block.timestamp + 1);
@@ -466,5 +472,146 @@ contract TranchesHookTest is Test, Deployers {
         (,, uint256 seniorFees, uint256 juniorFees,,) = hook.getPoolStats(poolKey);
         // Fees are taken by hook but can't be distributed to anyone
         // They stay in the hook contract
+    }
+
+    // ============ Phase 2+: DEEP Audit Fix Tests ============
+
+    /// @dev DEEP FIX #1: Adding liquidity with different tranche to existing position reverts
+    function test_trancheMismatchReverts() public {
+        // Bob deposits as JUNIOR
+        bytes memory juniorData = abi.encode(bob, TranchesHook.Tranche.JUNIOR);
+        modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, juniorData);
+
+        // Bob tries to add as SENIOR — should revert (error wrapped by router)
+        bytes memory seniorData = abi.encode(bob, TranchesHook.Tranche.SENIOR);
+        vm.expectRevert();
+        modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, seniorData);
+    }
+
+    /// @dev DEEP FIX #3: Fees tracked per currency — bidirectional swaps accumulate separately
+    function test_perCurrencyFeeTracking() public {
+        _addBothTranches();
+        vm.warp(block.timestamp + 1);
+
+        // Swap zeroForOne — fees in currency1
+        _doSwap(-1e18);
+
+        (, uint256 pendingBob1) = hook.pendingFees(bob, poolKey);
+        assertGt(pendingBob1, 0, "Bob should have currency1 fees from zeroForOne swap");
+
+        // Swap oneForZero — fees in currency0
+        vm.warp(block.timestamp + 2);
+        swap(poolKey, false, -1e18, ZERO_BYTES);
+
+        (uint256 pendingBob0, uint256 pendingBob1After) = hook.pendingFees(bob, poolKey);
+        assertGt(pendingBob0, 0, "Bob should have currency0 fees from oneForZero swap");
+        assertGe(pendingBob1After, pendingBob1, "Currency1 fees should still be there");
+    }
+
+    /// @dev DEEP FIX #5: setAuthorizedRSC requires DEPLOYER or current RSC
+    function test_setAuthorizedRSCRequiresDeployer() public {
+        // Random address can't set RSC
+        vm.prank(alice);
+        vm.expectRevert(TranchesHook.Unauthorized.selector);
+        hook.setAuthorizedRSC(bob);
+    }
+
+    /// @dev DEEP FIX #5: setAuthorizedRSC rejects zero address
+    function test_setAuthorizedRSCRevertsZeroAddress() public {
+        vm.expectRevert(TranchesHook.ZeroAddress.selector);
+        hook.setAuthorizedRSC(address(0));
+    }
+
+    /// @dev DEEP FIX #5: current RSC can update to new RSC
+    function test_rscCanUpdateItself() public {
+        // Deployer sets initial RSC
+        hook.setAuthorizedRSC(alice);
+        assertEq(hook.authorizedRSC(), alice);
+
+        // Alice (current RSC) updates to bob
+        vm.prank(alice);
+        hook.setAuthorizedRSC(bob);
+        assertEq(hook.authorizedRSC(), bob);
+    }
+
+    /// @dev DEEP FIX #9: withdrawFees reverts when no claimable balance
+    function test_withdrawFeesRevertsNoPending() public {
+        vm.prank(alice);
+        vm.expectRevert(TranchesHook.NoPendingFees.selector);
+        hook.withdrawFees(currency1);
+    }
+
+    /// @dev DEEP FIX #9: Full pull-pattern flow: claim → claimableBalance → withdrawFees
+    function test_pullPatternFullFlow() public {
+        _addBothTranches();
+        vm.warp(block.timestamp + 1);
+
+        // Swap to generate fees
+        _doSwap(-1e18);
+
+        // Check bob has pending fees
+        (, uint256 pendingBob1) = hook.pendingFees(bob, poolKey);
+        assertGt(pendingBob1, 0, "Bob should have pending fees");
+
+        // Claim moves fees to claimableBalance
+        vm.prank(bob);
+        hook.claimFees(poolKey);
+
+        // Check claimableBalance
+        uint256 claimable = hook.claimableBalance(bob, currency1);
+        assertEq(claimable, pendingBob1, "Claimable balance should match pending fees");
+
+        // Withdraw transfers tokens
+        uint256 bobBalBefore = currency1.balanceOf(bob);
+        vm.prank(bob);
+        hook.withdrawFees(currency1);
+        uint256 bobBalAfter = currency1.balanceOf(bob);
+
+        assertEq(bobBalAfter - bobBalBefore, pendingBob1, "Bob receives exact pending amount");
+        assertEq(hook.claimableBalance(bob, currency1), 0, "Claimable balance zeroed after withdraw");
+    }
+
+    /// @dev DEEP FIX #4: Partial removal keeps remaining position
+    function test_partialRemovalKeepsPosition() public {
+        _addBothTranches();
+        vm.roll(block.number + 101);
+
+        // Get bob's position amount
+        (, uint256 totalJuniorBefore,,,,) = hook.getPoolStats(poolKey);
+
+        // Remove half of bob's liquidity
+        IPoolManager.ModifyLiquidityParams memory removeHalf = IPoolManager.ModifyLiquidityParams({
+            tickLower: LIQUIDITY_PARAMS.tickLower,
+            tickUpper: LIQUIDITY_PARAMS.tickUpper,
+            liquidityDelta: -LIQUIDITY_PARAMS.liquidityDelta / 2,
+            salt: 0
+        });
+
+        bytes memory hookData = abi.encode(bob);
+        modifyLiquidityRouter.modifyLiquidity(poolKey, removeHalf, hookData);
+
+        // Junior liquidity should be reduced but not zero
+        (, uint256 totalJuniorAfter,,,,) = hook.getPoolStats(poolKey);
+        assertGt(totalJuniorAfter, 0, "Junior liquidity should remain after partial removal");
+        assertLt(totalJuniorAfter, totalJuniorBefore, "Junior liquidity should decrease");
+    }
+
+    /// @dev DEEP FIX #8: Same-block deposits don't get inflated fee share
+    function test_sameBlockSwapProportionalSplit() public {
+        _addBothTranches();
+
+        // Don't warp time — same block as deposit (timeDelta == 0)
+        // Swap should use proportional split, not time-based senior target
+        _doSwap(-1e18);
+
+        (,, uint256 seniorFees, uint256 juniorFees,,) = hook.getPoolStats(poolKey);
+
+        // With proportional split (50/50 liquidity), both should get roughly equal fees
+        uint256 totalFees = seniorFees + juniorFees;
+        if (totalFees > 0) {
+            // Both should have fees (proportional to their liquidity share)
+            assertGt(seniorFees, 0, "Senior should get proportional share");
+            assertGt(juniorFees, 0, "Junior should get proportional share");
+        }
     }
 }

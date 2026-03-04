@@ -4,6 +4,7 @@ out = "out"
 libs = ["lib"]
 solc_version = "0.8.26"
 evm_version = "cancun"
+via_ir = true
 remappings = [
     "forge-std/=lib/forge-std/src/",
     "v4-core/=lib/v4-core/src/",
