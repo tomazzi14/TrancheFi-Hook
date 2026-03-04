@@ -8,9 +8,7 @@ import {IHooks} from "v4-core/interfaces/IHooks.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
-import {Currency} from "v4-core/types/Currency.sol";
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
-import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {StateLibrary} from "v4-core/libraries/StateLibrary.sol";
 
 contract TranchesHookTest is Test, Deployers {
@@ -93,21 +91,8 @@ contract TranchesHookTest is Test, Deployers {
 
     // ============ Deposit Tests ============
 
-    function test_depositSenior() public {
-        // Add liquidity as Senior
-        bytes memory hookData = abi.encode(alice, TranchesHook.Tranche.SENIOR);
-
-        modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, hookData);
-
-        // Verify position registered
-        (uint256 totalSenior, uint256 totalJunior,,,,) = hook.getPoolStats(poolKey);
-
-        assertGt(totalSenior, 0, "Senior liquidity should be > 0");
-        assertEq(totalJunior, 0, "Junior liquidity should be 0");
-    }
-
     function test_depositJunior() public {
-        // Add liquidity as Junior
+        // Add liquidity as Junior (no ratio cap for junior)
         bytes memory hookData = abi.encode(bob, TranchesHook.Tranche.JUNIOR);
 
         modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, hookData);
@@ -120,13 +105,13 @@ contract TranchesHookTest is Test, Deployers {
     }
 
     function test_depositBothTranches() public {
-        // Senior deposit
-        bytes memory seniorData = abi.encode(alice, TranchesHook.Tranche.SENIOR);
-        modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, seniorData);
-
-        // Junior deposit
+        // Junior first (no ratio restrictions)
         bytes memory juniorData = abi.encode(bob, TranchesHook.Tranche.JUNIOR);
         modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, juniorData);
+
+        // Senior second (within 80% ratio cap)
+        bytes memory seniorData = abi.encode(alice, TranchesHook.Tranche.SENIOR);
+        modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, seniorData);
 
         (uint256 totalSenior, uint256 totalJunior,,,,) = hook.getPoolStats(poolKey);
 
@@ -144,4 +129,87 @@ contract TranchesHookTest is Test, Deployers {
         assertEq(totalSenior, 0, "No tranche registered");
         assertEq(totalJunior, 0, "No tranche registered");
     }
+
+    // ============ FIX #4: Senior Ratio Cap Tests ============
+
+    function test_seniorRatioCapEnforced() public {
+        // Deposit junior first
+        bytes memory juniorData = abi.encode(bob, TranchesHook.Tranche.JUNIOR);
+        modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, juniorData);
+
+        // First senior deposit should work (50/50 = 50% < 80%)
+        bytes memory seniorData = abi.encode(alice, TranchesHook.Tranche.SENIOR);
+        modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, seniorData);
+
+        (uint256 totalSenior, uint256 totalJunior,,,,) = hook.getPoolStats(poolKey);
+        assertEq(totalSenior, totalJunior, "50/50 split");
+    }
+
+    function test_seniorRatioCapRevertsWhenExceeded() public {
+        // FIX #4: Senior-only deposit should revert (100% > 80% cap)
+        bytes memory seniorData = abi.encode(alice, TranchesHook.Tranche.SENIOR);
+        vm.expectRevert();
+        modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, seniorData);
+    }
+
+    // ============ FIX #2: Position Accumulation Tests ============
+
+    function test_depositAccumulatesInsteadOfOverwriting() public {
+        // Junior deposit first
+        bytes memory juniorData = abi.encode(bob, TranchesHook.Tranche.JUNIOR);
+        modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, juniorData);
+
+        // Senior first deposit
+        bytes memory seniorData = abi.encode(alice, TranchesHook.Tranche.SENIOR);
+        modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, seniorData);
+
+        (uint256 seniorBefore,,,,,) = hook.getPoolStats(poolKey);
+
+        // Senior second deposit — should accumulate, not overwrite
+        // Need more junior to keep ratio under cap
+        modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, juniorData);
+        modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, seniorData);
+
+        (uint256 seniorAfter,,,,,) = hook.getPoolStats(poolKey);
+
+        assertGt(seniorAfter, seniorBefore, "Senior should have accumulated");
+    }
+
+    // ============ FIX #3: Access Control Tests ============
+
+    function test_adjustRiskParameterUnauthorizedReverts() public {
+        // FIX #3: Should revert because no authorizedRSC is set
+        vm.expectRevert(TranchesHook.Unauthorized.selector);
+        hook.adjustRiskParameter(poolKey, 1000);
+    }
+
+    function test_setAuthorizedRSC() public {
+        // First call should work (authorizedRSC is address(0))
+        hook.setAuthorizedRSC(alice);
+        assertEq(hook.authorizedRSC(), alice, "RSC should be alice");
+    }
+
+    function test_adjustRiskParameterAuthorized() public {
+        // Set RSC, then adjust
+        hook.setAuthorizedRSC(alice);
+
+        vm.prank(alice);
+        hook.adjustRiskParameter(poolKey, 1000);
+
+        (,,,, uint256 seniorAPY,) = hook.getPoolStats(poolKey);
+        assertEq(seniorAPY, 1000, "APY should be 1000 (10%)");
+    }
+
+    // ============ FIX #9: Constructor Zero Address Tests ============
+
+    function test_constructorRevertsOnZeroAddress() public {
+        vm.expectRevert(TranchesHook.ZeroAddress.selector);
+        new TranchesHook(IPoolManager(address(0)));
+    }
+
+    // ============ FIX #8: Delta Validation Tests ============
+
+    // Note: UnexpectedPositiveDelta is hard to trigger via the normal modifyLiquidity flow
+    // because PoolManager always produces negative deltas for addLiquidity. This is
+    // a defense-in-depth check for edge cases.
 }

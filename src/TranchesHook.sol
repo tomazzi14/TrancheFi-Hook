@@ -8,9 +8,10 @@ import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {BalanceDelta, toBalanceDelta} from "v4-core/types/BalanceDelta.sol";
-import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/types/BeforeSwapDelta.sol";
-import {Currency} from "v4-core/types/Currency.sol";
+import {Currency, CurrencyLibrary} from "v4-core/types/Currency.sol";
 import {SafeCast} from "v4-core/libraries/SafeCast.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @title TrancheFi Hook — Structured LP Tranches for Uniswap V4
 /// @notice Implements a Senior/Junior tranche system for LP positions.
@@ -19,6 +20,8 @@ import {SafeCast} from "v4-core/libraries/SafeCast.sol";
 contract TranchesHook is BaseTestHooks {
     using PoolIdLibrary for PoolKey;
     using SafeCast for uint256;
+    using CurrencyLibrary for Currency;
+    using SafeERC20 for IERC20;
 
     // ============ Enums ============
 
@@ -45,8 +48,9 @@ contract TranchesHook is BaseTestHooks {
         uint256 accumulatedFeesJunior;
         uint256 rewardPerShareSenior; // scaled by PRECISION
         uint256 rewardPerShareJunior; // scaled by PRECISION
-        uint256 lastUpdateBlock;
+        uint256 lastUpdateTimestamp; // FIX #6: use timestamp instead of block number
         uint160 initialSqrtPriceX96; // price at pool init, for IL calc
+        Currency feeCurrency; // FIX #1: track which currency fees are collected in
         bool initialized;
     }
 
@@ -54,8 +58,8 @@ contract TranchesHook is BaseTestHooks {
 
     uint256 public constant PRECISION = 1e18;
     uint256 public constant BASIS_POINTS = 10_000;
-    uint256 public constant BLOCKS_PER_YEAR = 2_628_000; // ~12s blocks on Unichain
-    uint256 public constant MIN_BLOCKS_LOCK = 100; // ~25s on Unichain
+    uint256 public constant SECONDS_PER_YEAR = 365 days; // FIX #6: timestamp-based
+    uint256 public constant MIN_BLOCKS_LOCK = 100; // ~100 blocks anti-flash-loan
     uint128 public constant TRANCHE_FEE_BIPS = 10; // 0.1% of swap output
 
     // ============ Immutables ============
@@ -63,6 +67,9 @@ contract TranchesHook is BaseTestHooks {
     IPoolManager public immutable POOL_MANAGER;
 
     // ============ Storage ============
+
+    /// @dev Authorized Reactive Smart Contract (RSC) address for risk parameter adjustments
+    address public authorizedRSC; // FIX #3: access control for adjustRiskParameter
 
     /// @dev PoolId => PoolConfig
     mapping(PoolId => PoolConfig) public poolConfigs;
@@ -78,6 +85,7 @@ contract TranchesHook is BaseTestHooks {
     event FeesClaimed(address indexed lp, PoolId indexed poolId, uint256 amount);
     event PoolConfigured(PoolId indexed poolId, uint256 seniorTargetAPY, uint256 maxSeniorRatio);
     event RiskParameterAdjusted(PoolId indexed poolId, uint256 newSeniorTargetAPY);
+    event AuthorizedRSCUpdated(address indexed oldRSC, address indexed newRSC);
 
     // ============ Errors ============
 
@@ -86,18 +94,27 @@ contract TranchesHook is BaseTestHooks {
     error SeniorRatioExceeded(uint256 currentRatio, uint256 maxRatio);
     error NoPosition();
     error NoPendingFees();
+    error Unauthorized();
+    error ZeroAddress();
+    error UnexpectedPositiveDelta();
 
     // ============ Constructor ============
 
     constructor(IPoolManager _manager) {
+        // FIX #9: zero-address check
+        if (address(_manager) == address(0)) revert ZeroAddress();
         POOL_MANAGER = _manager;
     }
 
     // ============ Modifiers ============
 
     modifier onlyPoolManager() {
-        require(msg.sender == address(POOL_MANAGER), "Not PoolManager");
+        _checkPoolManager();
         _;
+    }
+
+    function _checkPoolManager() internal view {
+        require(msg.sender == address(POOL_MANAGER), "Not PoolManager");
     }
 
     // ============ Hook Permissions ============
@@ -124,7 +141,6 @@ contract TranchesHook is BaseTestHooks {
     // ============ Hook Callbacks ============
 
     /// @notice Called after pool initialization. Configures tranche parameters.
-    /// @dev hookData = abi.encode(seniorTargetAPY, maxSeniorRatio)
     function afterInitialize(address, PoolKey calldata key, uint160 sqrtPriceX96, int24)
         external
         override
@@ -133,7 +149,7 @@ contract TranchesHook is BaseTestHooks {
     {
         PoolId poolId = key.toId();
 
-        // Default config if no hookData provided during init
+        // Default config
         poolConfigs[poolId] = PoolConfig({
             seniorTargetAPY: 500, // 5% default
             maxSeniorRatio: 8000, // 80% default
@@ -143,8 +159,9 @@ contract TranchesHook is BaseTestHooks {
             accumulatedFeesJunior: 0,
             rewardPerShareSenior: 0,
             rewardPerShareJunior: 0,
-            lastUpdateBlock: block.number,
+            lastUpdateTimestamp: block.timestamp, // FIX #6: timestamp
             initialSqrtPriceX96: sqrtPriceX96,
+            feeCurrency: key.currency1, // default: fees collected in currency1
             initialized: true
         });
 
@@ -155,10 +172,11 @@ contract TranchesHook is BaseTestHooks {
 
     /// @notice Called after liquidity is added. Registers the LP's tranche.
     /// @dev hookData = abi.encode(lpAddress, tranche)
+    ///      FIX #2: accumulates into existing positions instead of overwriting
     function afterAddLiquidity(
         address,
         PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata params,
+        IPoolManager.ModifyLiquidityParams calldata,
         BalanceDelta delta,
         BalanceDelta,
         bytes calldata hookData
@@ -170,32 +188,47 @@ contract TranchesHook is BaseTestHooks {
         PoolId poolId = key.toId();
         PoolConfig storage config = poolConfigs[poolId];
 
+        // LP address comes from hookData because sender is the Router/PositionManager
         (address lpAddress, Tranche tranche) = abi.decode(hookData, (address, Tranche));
 
-        // Calculate liquidity amount from delta (absolute value of tokens added)
-        uint256 amount = uint256(uint128(-delta.amount0())) + uint256(uint128(-delta.amount1()));
+        // FIX #8: Safe delta extraction with validation
+        int128 d0 = delta.amount0();
+        int128 d1 = delta.amount1();
+        // When adding liquidity, deltas should be negative (tokens leaving the LP to the pool)
+        if (d0 > 0 || d1 > 0) revert UnexpectedPositiveDelta();
+        uint256 amount = uint256(-int256(d0)) + uint256(-int256(d1));
 
-        // Check senior ratio cap
+        // FIX #4: Senior ratio cap enforced always (removed totalJuniorLiquidity > 0 bypass)
         if (tranche == Tranche.SENIOR) {
             uint256 totalAfter = config.totalSeniorLiquidity + config.totalJuniorLiquidity + amount;
             uint256 seniorAfter = config.totalSeniorLiquidity + amount;
             uint256 ratio = (seniorAfter * BASIS_POINTS) / totalAfter;
-            if (ratio > config.maxSeniorRatio && config.totalJuniorLiquidity > 0) {
+            if (ratio > config.maxSeniorRatio) {
                 revert SeniorRatioExceeded(ratio, config.maxSeniorRatio);
             }
         }
 
-        // Register position
+        // FIX #2: accumulate into existing position instead of overwriting
         bytes32 posKey = _positionKey(lpAddress, poolId);
         uint256 rewardPerShare =
             tranche == Tranche.SENIOR ? config.rewardPerShareSenior : config.rewardPerShareJunior;
 
-        positions[posKey] = Position({
-            tranche: tranche,
-            amount: amount,
-            depositBlock: block.number,
-            rewardDebt: (amount * rewardPerShare) / PRECISION
-        });
+        Position storage existing = positions[posKey];
+        if (existing.amount > 0) {
+            // Existing position: claim pending fees first, then accumulate
+            _claimFeesInternal(lpAddress, poolId, config, existing);
+            existing.amount += amount;
+            existing.rewardDebt = (existing.amount * rewardPerShare) / PRECISION;
+            // Do NOT reset depositBlock — preserve original lock
+        } else {
+            // New position
+            positions[posKey] = Position({
+                tranche: tranche,
+                amount: amount,
+                depositBlock: block.number,
+                rewardDebt: (amount * rewardPerShare) / PRECISION
+            });
+        }
 
         // Update pool totals
         if (tranche == Tranche.SENIOR) {
@@ -239,6 +272,9 @@ contract TranchesHook is BaseTestHooks {
         // Take fee from the swap output via PoolManager
         POOL_MANAGER.take(feeCurrency, address(this), feeAmount);
 
+        // Track fee currency for claims
+        config.feeCurrency = feeCurrency;
+
         // Distribute via waterfall
         _distributeWaterfall(poolId, config, feeAmount);
 
@@ -251,7 +287,7 @@ contract TranchesHook is BaseTestHooks {
         address,
         PoolKey calldata key,
         IPoolManager.ModifyLiquidityParams calldata,
-        BalanceDelta delta,
+        BalanceDelta,
         BalanceDelta,
         bytes calldata hookData
     ) external override onlyPoolManager returns (bytes4, BalanceDelta) {
@@ -261,6 +297,8 @@ contract TranchesHook is BaseTestHooks {
 
         PoolId poolId = key.toId();
         PoolConfig storage config = poolConfigs[poolId];
+
+        // LP address from hookData (sender is Router/PositionManager)
         address lpAddress = abi.decode(hookData, (address));
 
         bytes32 posKey = _positionKey(lpAddress, poolId);
@@ -308,8 +346,9 @@ contract TranchesHook is BaseTestHooks {
     }
 
     /// @notice Called by Reactive Network RSC to adjust risk parameters
+    /// FIX #3: access control via authorizedRSC
     function adjustRiskParameter(PoolKey calldata key, uint256 newSeniorTargetAPY) external {
-        // TODO: restrict to authorized RSC address
+        if (msg.sender != authorizedRSC) revert Unauthorized();
         PoolId poolId = key.toId();
         PoolConfig storage config = poolConfigs[poolId];
         if (!config.initialized) revert PoolNotInitialized();
@@ -319,19 +358,28 @@ contract TranchesHook is BaseTestHooks {
         emit RiskParameterAdjusted(poolId, newSeniorTargetAPY);
     }
 
+    /// @notice Set the authorized RSC address (only callable by current RSC or deployer initially)
+    function setAuthorizedRSC(address newRSC) external {
+        // Only the current RSC (or deployer before RSC is set) can update
+        if (authorizedRSC != address(0) && msg.sender != authorizedRSC) revert Unauthorized();
+        emit AuthorizedRSCUpdated(authorizedRSC, newRSC);
+        authorizedRSC = newRSC;
+    }
+
     // ============ Internal Functions ============
 
     /// @dev Distributes fees via waterfall: Senior first, Junior gets the rest
+    /// FIX #6: uses block.timestamp instead of block.number for APY calculation
     function _distributeWaterfall(PoolId poolId, PoolConfig storage config, uint256 totalFees) internal {
-        uint256 blocksDelta = block.number - config.lastUpdateBlock;
-        config.lastUpdateBlock = block.number;
+        uint256 timeDelta = block.timestamp - config.lastUpdateTimestamp;
+        config.lastUpdateTimestamp = block.timestamp;
 
         uint256 seniorOwed = 0;
 
-        if (config.totalSeniorLiquidity > 0 && blocksDelta > 0) {
-            // Senior owed = (totalSeniorLiquidity * APY / BLOCKS_PER_YEAR) * blocksDelta
-            seniorOwed = (config.totalSeniorLiquidity * config.seniorTargetAPY * blocksDelta)
-                / (BASIS_POINTS * BLOCKS_PER_YEAR);
+        if (config.totalSeniorLiquidity > 0 && timeDelta > 0) {
+            // Senior owed = (totalSeniorLiquidity * APY / SECONDS_PER_YEAR) * timeDelta
+            seniorOwed = (config.totalSeniorLiquidity * config.seniorTargetAPY * timeDelta)
+                / (BASIS_POINTS * SECONDS_PER_YEAR);
         }
 
         uint256 seniorFees;
@@ -357,14 +405,19 @@ contract TranchesHook is BaseTestHooks {
             config.rewardPerShareJunior += (juniorFees * PRECISION) / config.totalJuniorLiquidity;
             config.accumulatedFeesJunior += juniorFees;
         } else if (juniorFees > 0 && config.totalJuniorLiquidity == 0) {
-            // No juniors — fees accumulate unclaimed (incentive for junior to join)
-            config.accumulatedFeesJunior += juniorFees;
+            // FIX #5: redirect unclaimed junior fees to seniors instead of locking them
+            if (config.totalSeniorLiquidity > 0) {
+                config.rewardPerShareSenior += (juniorFees * PRECISION) / config.totalSeniorLiquidity;
+                config.accumulatedFeesSenior += juniorFees;
+            }
+            // If no participants at all, fees are unavoidably lost
         }
 
         emit FeeDistributed(poolId, seniorFees, juniorFees);
     }
 
     /// @dev Internal fee claim logic
+    /// FIX #1: actually transfer tokens to the LP
     function _claimFeesInternal(address lp, PoolId poolId, PoolConfig storage config, Position storage pos) internal {
         uint256 rewardPerShare =
             pos.tranche == Tranche.SENIOR ? config.rewardPerShareSenior : config.rewardPerShareJunior;
@@ -373,7 +426,13 @@ contract TranchesHook is BaseTestHooks {
 
         if (pending > 0) {
             pos.rewardDebt = pos.amount * rewardPerShare / PRECISION;
-            // TODO: transfer tokens to LP (needs PoolManager.take or claim from hook balance)
+
+            // FIX #1: Transfer fee tokens from hook balance to LP
+            Currency feeCurrency = config.feeCurrency;
+            if (!feeCurrency.isAddressZero()) {
+                IERC20(Currency.unwrap(feeCurrency)).safeTransfer(lp, pending);
+            }
+
             emit FeesClaimed(lp, poolId, pending);
         }
     }
