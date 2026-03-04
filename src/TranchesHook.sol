@@ -267,6 +267,12 @@ contract TranchesHook is BaseTestHooks {
         uint256 feeAmount = uint256(uint128(outputAmount)) * uint256(TRANCHE_FEE_BIPS) / BASIS_POINTS;
         if (feeAmount == 0) return (IHooks.afterSwap.selector, 0);
 
+        // AUDIT4 FIX #2: skip take if fee too small to distribute (prevents dust lock)
+        uint256 totalLiquidity = config.totalSeniorLiquidity + config.totalJuniorLiquidity;
+        if ((feeAmount * PRECISION) / totalLiquidity == 0) {
+            return (IHooks.afterSwap.selector, 0);
+        }
+
         // AUDIT3 FIX #2+#5: use feeAmount directly (consistent delta, immune to dust donation)
         // Note: FOT tokens not supported — V4 pools generally don't support them either
         POOL_MANAGER.take(feeCurrency, address(this), feeAmount);
