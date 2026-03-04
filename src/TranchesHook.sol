@@ -85,6 +85,11 @@ contract TranchesHook is BaseTestHooks {
     /// @dev DEEP FIX #9: pull-pattern claimable balances (lp => currency => amount)
     mapping(address => mapping(Currency => uint256)) public claimableBalance;
 
+    /// @dev AUDIT3 FIX #1: pre-registration to prevent hookData lpAddress spoofing
+    mapping(address => bool) private _depositRegistered;
+    mapping(address => Tranche) private _depositTranche;
+    mapping(address => bool) private _removalRegistered;
+
     // ============ Events ============
 
     event TranchDeposit(PoolId indexed poolId, address indexed lp, Tranche tranche, uint256 amount);
@@ -106,6 +111,8 @@ contract TranchesHook is BaseTestHooks {
     error ZeroAddress();
     error UnexpectedPositiveDelta();
     error TrancheMismatch(); // DEEP FIX #1
+    error DepositNotRegistered(); // AUDIT3 FIX #1
+    error RemovalNotRegistered(); // AUDIT3 FIX #1
 
     // ============ Constructor ============
 
@@ -195,6 +202,13 @@ contract TranchesHook is BaseTestHooks {
 
         (address lpAddress, Tranche tranche) = abi.decode(hookData, (address, Tranche));
 
+        // AUDIT3 FIX #1: validate pre-registration (prevents hookData spoofing)
+        if (!_depositRegistered[lpAddress] || _depositTranche[lpAddress] != tranche) {
+            revert DepositNotRegistered();
+        }
+        delete _depositRegistered[lpAddress];
+        delete _depositTranche[lpAddress];
+
         // Safe delta extraction with validation (scoped to free stack slots)
         uint256 amount;
         {
@@ -235,6 +249,11 @@ contract TranchesHook is BaseTestHooks {
 
         if (!config.initialized) return (IHooks.afterSwap.selector, 0);
 
+        // AUDIT3 FIX #4: skip fee when no LPs exist (prevents permanent fee lock)
+        if (config.totalSeniorLiquidity + config.totalJuniorLiquidity == 0) {
+            return (IHooks.afterSwap.selector, 0);
+        }
+
         // Determine the unspecified (output) token and amount
         bool specifiedIs0 = (params.amountSpecified < 0 == params.zeroForOne);
         (Currency feeCurrency, int128 outputAmount) =
@@ -248,18 +267,17 @@ contract TranchesHook is BaseTestHooks {
         uint256 feeAmount = uint256(uint128(outputAmount)) * uint256(TRANCHE_FEE_BIPS) / BASIS_POINTS;
         if (feeAmount == 0) return (IHooks.afterSwap.selector, 0);
 
-        // DEEP FIX #6: measure actual received for fee-on-transfer tokens
-        uint256 balanceBefore = IERC20(Currency.unwrap(feeCurrency)).balanceOf(address(this));
+        // AUDIT3 FIX #2+#5: use feeAmount directly (consistent delta, immune to dust donation)
+        // Note: FOT tokens not supported — V4 pools generally don't support them either
         POOL_MANAGER.take(feeCurrency, address(this), feeAmount);
-        uint256 actualReceived = IERC20(Currency.unwrap(feeCurrency)).balanceOf(address(this)) - balanceBefore;
 
         // Determine which currency index this fee belongs to
         bool isCurrency0 = Currency.unwrap(feeCurrency) == Currency.unwrap(key.currency0);
 
         // Distribute via waterfall
-        _distributeWaterfall(poolId, config, actualReceived, isCurrency0);
+        _distributeWaterfall(poolId, config, feeAmount, isCurrency0);
 
-        // Return the fee amount as the hook's delta
+        // Return the fee amount as the hook's delta (consistent with take amount)
         return (IHooks.afterSwap.selector, feeAmount.toInt128());
     }
 
@@ -280,6 +298,10 @@ contract TranchesHook is BaseTestHooks {
         PoolConfig storage config = poolConfigs[poolId];
         address lpAddress = abi.decode(hookData, (address));
 
+        // AUDIT3 FIX #1: validate pre-registration (prevents hookData spoofing)
+        if (!_removalRegistered[lpAddress]) revert RemovalNotRegistered();
+        delete _removalRegistered[lpAddress];
+
         bytes32 posKey = _positionKey(lpAddress, poolId);
         Position storage pos = positions[posKey];
 
@@ -296,12 +318,11 @@ contract TranchesHook is BaseTestHooks {
         // DEEP FIX #4: calculate actual removal amount from delta
         int128 rd0 = delta.amount0();
         int128 rd1 = delta.amount1();
-        // Removal deltas are positive (tokens flowing back to LP)
+        // AUDIT3 FIX #3: only count tokens actually returned to LP (positive deltas)
+        // Negative deltas (IL owed back to pool) must NOT inflate removedAmount
         uint256 removedAmount;
         if (rd0 > 0) removedAmount += uint256(int256(rd0));
-        if (rd0 < 0) removedAmount += uint256(-int256(rd0));
         if (rd1 > 0) removedAmount += uint256(int256(rd1));
-        if (rd1 < 0) removedAmount += uint256(-int256(rd1));
 
         // Cap at position amount
         if (removedAmount > pos.amount) removedAmount = pos.amount;
@@ -372,6 +393,19 @@ contract TranchesHook is BaseTestHooks {
         if (newRSC == address(0)) revert ZeroAddress();
         emit AuthorizedRSCUpdated(authorizedRSC, newRSC);
         authorizedRSC = newRSC;
+    }
+
+    /// @notice LP pre-registers intent to deposit (prevents hookData spoofing)
+    /// @dev Must be called by the LP before calling PoolManager.modifyLiquidity
+    function registerDeposit(Tranche tranche) external {
+        _depositRegistered[msg.sender] = true;
+        _depositTranche[msg.sender] = tranche;
+    }
+
+    /// @notice LP pre-registers intent to remove liquidity (prevents hookData spoofing)
+    /// @dev Must be called by the LP before calling PoolManager.modifyLiquidity
+    function registerRemoval() external {
+        _removalRegistered[msg.sender] = true;
     }
 
     // ============ Internal Functions ============
@@ -458,8 +492,8 @@ contract TranchesHook is BaseTestHooks {
         uint256 totalLiquidity = config.totalSeniorLiquidity + config.totalJuniorLiquidity;
 
         if (config.totalSeniorLiquidity > 0 && timeDelta > 0) {
-            seniorOwed = (config.totalSeniorLiquidity * config.seniorTargetAPY * timeDelta)
-                / (BASIS_POINTS * SECONDS_PER_YEAR);
+            seniorOwed =
+                (config.totalSeniorLiquidity * config.seniorTargetAPY * timeDelta) / (BASIS_POINTS * SECONDS_PER_YEAR);
         } else if (config.totalSeniorLiquidity > 0 && timeDelta == 0 && totalLiquidity > 0) {
             // DEEP FIX #8: same-block — split proportionally to prevent flash-loan manipulation
             seniorOwed = (totalFees * config.totalSeniorLiquidity) / totalLiquidity;

@@ -52,9 +52,13 @@ contract TranchesHookTest is Test, Deployers {
 
     /// @dev Helper: add liquidity as both tranches (junior first to satisfy ratio cap)
     function _addBothTranches() internal {
+        vm.prank(bob);
+        hook.registerDeposit(TranchesHook.Tranche.JUNIOR);
         bytes memory juniorData = abi.encode(bob, TranchesHook.Tranche.JUNIOR);
         modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, juniorData);
 
+        vm.prank(alice);
+        hook.registerDeposit(TranchesHook.Tranche.SENIOR);
         bytes memory seniorData = abi.encode(alice, TranchesHook.Tranche.SENIOR);
         modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, seniorData);
     }
@@ -107,6 +111,8 @@ contract TranchesHookTest is Test, Deployers {
     // ============ Deposit Tests ============
 
     function test_depositJunior() public {
+        vm.prank(bob);
+        hook.registerDeposit(TranchesHook.Tranche.JUNIOR);
         bytes memory hookData = abi.encode(bob, TranchesHook.Tranche.JUNIOR);
         modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, hookData);
 
@@ -135,9 +141,13 @@ contract TranchesHookTest is Test, Deployers {
     // ============ Senior Ratio Cap Tests ============
 
     function test_seniorRatioCapEnforced() public {
+        vm.prank(bob);
+        hook.registerDeposit(TranchesHook.Tranche.JUNIOR);
         bytes memory juniorData = abi.encode(bob, TranchesHook.Tranche.JUNIOR);
         modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, juniorData);
 
+        vm.prank(alice);
+        hook.registerDeposit(TranchesHook.Tranche.SENIOR);
         bytes memory seniorData = abi.encode(alice, TranchesHook.Tranche.SENIOR);
         modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, seniorData);
 
@@ -147,6 +157,8 @@ contract TranchesHookTest is Test, Deployers {
 
     function test_seniorRatioCapRevertsWhenExceeded() public {
         // Senior-only deposit should revert (100% > 80% cap)
+        vm.prank(alice);
+        hook.registerDeposit(TranchesHook.Tranche.SENIOR);
         bytes memory seniorData = abi.encode(alice, TranchesHook.Tranche.SENIOR);
         vm.expectRevert();
         modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, seniorData);
@@ -155,16 +167,25 @@ contract TranchesHookTest is Test, Deployers {
     // ============ Position Accumulation Tests ============
 
     function test_depositAccumulatesInsteadOfOverwriting() public {
+        vm.prank(bob);
+        hook.registerDeposit(TranchesHook.Tranche.JUNIOR);
         bytes memory juniorData = abi.encode(bob, TranchesHook.Tranche.JUNIOR);
         modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, juniorData);
 
+        vm.prank(alice);
+        hook.registerDeposit(TranchesHook.Tranche.SENIOR);
         bytes memory seniorData = abi.encode(alice, TranchesHook.Tranche.SENIOR);
         modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, seniorData);
 
         (uint256 seniorBefore,,,,,) = hook.getPoolStats(poolKey);
 
         // Add more to keep ratio under cap
+        vm.prank(bob);
+        hook.registerDeposit(TranchesHook.Tranche.JUNIOR);
         modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, juniorData);
+
+        vm.prank(alice);
+        hook.registerDeposit(TranchesHook.Tranche.SENIOR);
         modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, seniorData);
 
         (uint256 seniorAfter,,,,,) = hook.getPoolStats(poolKey);
@@ -263,9 +284,7 @@ contract TranchesHookTest is Test, Deployers {
         (,, uint256 seniorFees2, uint256 juniorFees2,,) = hook.getPoolStats(poolKey);
 
         // Fees should accumulate
-        assertTrue(
-            seniorFees2 + juniorFees2 > seniorFees1 + juniorFees1, "Total fees should increase with each swap"
-        );
+        assertTrue(seniorFees2 + juniorFees2 > seniorFees1 + juniorFees1, "Total fees should increase with each swap");
     }
 
     function test_hookReceivesTokensFromFee() public {
@@ -353,6 +372,8 @@ contract TranchesHookTest is Test, Deployers {
             salt: 0
         });
 
+        vm.prank(bob);
+        hook.registerRemoval();
         bytes memory hookData = abi.encode(bob);
         vm.expectRevert();
         modifyLiquidityRouter.modifyLiquidity(poolKey, removeParams, hookData);
@@ -372,6 +393,8 @@ contract TranchesHookTest is Test, Deployers {
             salt: 0
         });
 
+        vm.prank(bob);
+        hook.registerRemoval();
         bytes memory hookData = abi.encode(bob);
         modifyLiquidityRouter.modifyLiquidity(poolKey, removeParams, hookData);
 
@@ -400,6 +423,8 @@ contract TranchesHookTest is Test, Deployers {
             salt: 0
         });
 
+        vm.prank(bob);
+        hook.registerRemoval();
         bytes memory hookData = abi.encode(bob);
         modifyLiquidityRouter.modifyLiquidity(poolKey, removeParams, hookData);
 
@@ -417,6 +442,8 @@ contract TranchesHookTest is Test, Deployers {
 
     function test_swapWithOnlyJunior_allFeesToJunior() public {
         // Only junior liquidity — no senior
+        vm.prank(bob);
+        hook.registerDeposit(TranchesHook.Tranche.JUNIOR);
         bytes memory juniorData = abi.encode(bob, TranchesHook.Tranche.JUNIOR);
         modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, juniorData);
 
@@ -430,9 +457,13 @@ contract TranchesHookTest is Test, Deployers {
 
     function test_swapWithOnlySenior_noJuniorFeeRedirect() public {
         // Need to add junior first for ratio cap, then add senior, then remove junior
+        vm.prank(bob);
+        hook.registerDeposit(TranchesHook.Tranche.JUNIOR);
         bytes memory juniorData = abi.encode(bob, TranchesHook.Tranche.JUNIOR);
         modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, juniorData);
 
+        vm.prank(alice);
+        hook.registerDeposit(TranchesHook.Tranche.SENIOR);
         bytes memory seniorData = abi.encode(alice, TranchesHook.Tranche.SENIOR);
         modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, seniorData);
 
@@ -444,6 +475,8 @@ contract TranchesHookTest is Test, Deployers {
             liquidityDelta: -LIQUIDITY_PARAMS.liquidityDelta,
             salt: 0
         });
+        vm.prank(bob);
+        hook.registerRemoval();
         modifyLiquidityRouter.modifyLiquidity(poolKey, removeParams, abi.encode(bob));
 
         // Now only senior remains (small dust possible from AMM rounding)
@@ -470,8 +503,9 @@ contract TranchesHookTest is Test, Deployers {
         _doSwap(-1e18);
 
         (,, uint256 seniorFees, uint256 juniorFees,,) = hook.getPoolStats(poolKey);
-        // Fees are taken by hook but can't be distributed to anyone
-        // They stay in the hook contract
+        // AUDIT3 FIX #4: hook returns early with 0 delta when no LPs, so no fees taken
+        assertEq(seniorFees, 0, "No senior fees when no tranche LPs");
+        assertEq(juniorFees, 0, "No junior fees when no tranche LPs");
     }
 
     // ============ Phase 2+: DEEP Audit Fix Tests ============
@@ -479,10 +513,14 @@ contract TranchesHookTest is Test, Deployers {
     /// @dev DEEP FIX #1: Adding liquidity with different tranche to existing position reverts
     function test_trancheMismatchReverts() public {
         // Bob deposits as JUNIOR
+        vm.prank(bob);
+        hook.registerDeposit(TranchesHook.Tranche.JUNIOR);
         bytes memory juniorData = abi.encode(bob, TranchesHook.Tranche.JUNIOR);
         modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, juniorData);
 
         // Bob tries to add as SENIOR — should revert (error wrapped by router)
+        vm.prank(bob);
+        hook.registerDeposit(TranchesHook.Tranche.SENIOR);
         bytes memory seniorData = abi.encode(bob, TranchesHook.Tranche.SENIOR);
         vm.expectRevert();
         modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, seniorData);
@@ -587,6 +625,8 @@ contract TranchesHookTest is Test, Deployers {
             salt: 0
         });
 
+        vm.prank(bob);
+        hook.registerRemoval();
         bytes memory hookData = abi.encode(bob);
         modifyLiquidityRouter.modifyLiquidity(poolKey, removeHalf, hookData);
 
@@ -613,5 +653,63 @@ contract TranchesHookTest is Test, Deployers {
             assertGt(seniorFees, 0, "Senior should get proportional share");
             assertGt(juniorFees, 0, "Junior should get proportional share");
         }
+    }
+
+    // ============ AUDIT3: Pre-Registration Validation Tests ============
+
+    /// @dev AUDIT3 FIX #1: Deposit without pre-registration reverts
+    function test_depositWithoutRegistrationReverts() public {
+        // Try to deposit without calling registerDeposit first
+        bytes memory hookData = abi.encode(bob, TranchesHook.Tranche.JUNIOR);
+        vm.expectRevert();
+        modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, hookData);
+    }
+
+    /// @dev AUDIT3 FIX #1: Removal without pre-registration reverts
+    function test_removalWithoutRegistrationReverts() public {
+        // First do a valid deposit
+        _addBothTranches();
+        vm.roll(block.number + 101);
+
+        // Try to remove without calling registerRemoval first
+        IPoolManager.ModifyLiquidityParams memory removeParams = IPoolManager.ModifyLiquidityParams({
+            tickLower: LIQUIDITY_PARAMS.tickLower,
+            tickUpper: LIQUIDITY_PARAMS.tickUpper,
+            liquidityDelta: -LIQUIDITY_PARAMS.liquidityDelta,
+            salt: 0
+        });
+
+        bytes memory hookData = abi.encode(bob);
+        vm.expectRevert();
+        modifyLiquidityRouter.modifyLiquidity(poolKey, removeParams, hookData);
+    }
+
+    /// @dev AUDIT3 FIX #1: Registration with mismatched tranche reverts
+    function test_depositWithWrongRegistrationTrancheReverts() public {
+        // Register as JUNIOR but try to deposit as SENIOR
+        vm.prank(bob);
+        hook.registerDeposit(TranchesHook.Tranche.JUNIOR);
+        bytes memory seniorData = abi.encode(bob, TranchesHook.Tranche.SENIOR);
+        vm.expectRevert();
+        modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, seniorData);
+    }
+
+    /// @dev AUDIT3 FIX #4: Swap with no tranche LPs returns 0 delta (no stuck fees)
+    function test_swapNoTrancheLP_zeroDelta() public {
+        // Add liquidity without tranche registration (raw LP)
+        modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, ZERO_BYTES);
+        vm.warp(block.timestamp + 1);
+
+        // Hook should have no balance change after swap (returns 0 delta)
+        uint256 hookBalance0Before = currency0.balanceOf(address(hook));
+        uint256 hookBalance1Before = currency1.balanceOf(address(hook));
+
+        _doSwap(-1e18);
+
+        uint256 hookBalance0After = currency0.balanceOf(address(hook));
+        uint256 hookBalance1After = currency1.balanceOf(address(hook));
+
+        assertEq(hookBalance0After, hookBalance0Before, "Hook currency0 balance unchanged");
+        assertEq(hookBalance1After, hookBalance1Before, "Hook currency1 balance unchanged");
     }
 }
