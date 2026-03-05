@@ -365,12 +365,18 @@ contract TranchesHook is BaseTestHooks {
     }
 
     /// @notice DEEP FIX #9: Pull pattern — LP withdraws claimable balance
+    /// AUDIT5 FIX #2: supports both native ETH and ERC20 currencies
     function withdrawFees(Currency currency) external {
         uint256 amount = claimableBalance[msg.sender][currency];
         if (amount == 0) revert NoPendingFees();
 
         claimableBalance[msg.sender][currency] = 0;
-        IERC20(Currency.unwrap(currency)).safeTransfer(msg.sender, amount);
+        if (currency.isAddressZero()) {
+            (bool success,) = msg.sender.call{value: amount}("");
+            require(success, "ETH transfer failed");
+        } else {
+            IERC20(Currency.unwrap(currency)).safeTransfer(msg.sender, amount);
+        }
     }
 
     /// @notice Called by Reactive Network RSC to adjust risk parameters
