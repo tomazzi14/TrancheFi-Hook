@@ -193,8 +193,8 @@ contract TranchesHook is BaseTestHooks {
     function afterAddLiquidity(
         address,
         PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata,
-        BalanceDelta delta,
+        IPoolManager.ModifyLiquidityParams calldata params,
+        BalanceDelta,
         BalanceDelta,
         bytes calldata hookData
     ) external override onlyPoolManager returns (bytes4, BalanceDelta) {
@@ -214,14 +214,8 @@ contract TranchesHook is BaseTestHooks {
         delete _depositRegistered[lpAddress];
         delete _depositTranche[lpAddress];
 
-        // Safe delta extraction with validation (scoped to free stack slots)
-        uint256 amount;
-        {
-            int128 d0 = delta.amount0();
-            int128 d1 = delta.amount1();
-            if (d0 > 0 || d1 > 0) revert UnexpectedPositiveDelta();
-            amount = uint256(-int256(d0)) + uint256(-int256(d1));
-        }
+        // AUDIT5 FIX #1: use V4-native liquidity units (decimal-agnostic)
+        uint256 amount = uint256(params.liquidityDelta);
 
         // Senior ratio cap enforced always
         if (tranche == Tranche.SENIOR) {
@@ -296,8 +290,8 @@ contract TranchesHook is BaseTestHooks {
     function afterRemoveLiquidity(
         address,
         PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata,
-        BalanceDelta delta,
+        IPoolManager.ModifyLiquidityParams calldata params,
+        BalanceDelta,
         BalanceDelta,
         bytes calldata hookData
     ) external override onlyPoolManager returns (bytes4, BalanceDelta) {
@@ -326,14 +320,8 @@ contract TranchesHook is BaseTestHooks {
         // Auto-claim pending fees (uses pull pattern — won't revert on blacklist)
         _claimFeesInternal(lpAddress, poolId, key, config, pos);
 
-        // DEEP FIX #4: calculate actual removal amount from delta
-        int128 rd0 = delta.amount0();
-        int128 rd1 = delta.amount1();
-        // AUDIT3 FIX #3: only count tokens actually returned to LP (positive deltas)
-        // Negative deltas (IL owed back to pool) must NOT inflate removedAmount
-        uint256 removedAmount;
-        if (rd0 > 0) removedAmount += uint256(int256(rd0));
-        if (rd1 > 0) removedAmount += uint256(int256(rd1));
+        // AUDIT5 FIX #1: use V4-native liquidity units (decimal-agnostic, matches deposit tracking)
+        uint256 removedAmount = uint256(-params.liquidityDelta);
 
         // Cap at position amount
         if (removedAmount > pos.amount) removedAmount = pos.amount;
