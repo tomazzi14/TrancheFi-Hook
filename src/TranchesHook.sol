@@ -66,7 +66,6 @@ contract TranchesHook is BaseTestHooks {
 
     uint256 public constant PRECISION = 1e18;
     uint256 public constant BASIS_POINTS = 10_000;
-    uint256 public constant SECONDS_PER_YEAR = 365 days;
     uint256 public constant MIN_BLOCKS_LOCK = 100; // anti-flash-loan
     uint128 public constant TRANCHE_FEE_BIPS = 10; // 0.1% of swap output
     uint256 public constant MAX_IL_BIPS = 2000; // max 20% IL adjustment per removal (anti-manipulation)
