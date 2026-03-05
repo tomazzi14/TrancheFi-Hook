@@ -299,7 +299,7 @@ contract TranchesHook is BaseTestHooks {
         address,
         PoolKey calldata key,
         IPoolManager.ModifyLiquidityParams calldata params,
-        BalanceDelta,
+        BalanceDelta delta,
         BalanceDelta,
         bytes calldata hookData
     ) external override onlyPoolManager returns (bytes4, BalanceDelta) {
@@ -328,6 +328,12 @@ contract TranchesHook is BaseTestHooks {
         // Auto-claim pending fees (uses pull pattern — won't revert on blacklist)
         _claimFeesInternal(lpAddress, poolId, key, config, pos);
 
+        // Cache tranche before position may be deleted
+        Tranche tranche = pos.tranche;
+
+        // Calculate IL delta BEFORE updating pool state (needs pre-decrement ratios)
+        (int128 hookDelta0, int128 hookDelta1) = _calculateILDelta(config, key, params, tranche);
+
         // AUDIT5 FIX #1: use V4-native liquidity units (decimal-agnostic, matches deposit tracking)
         uint256 removedAmount = uint256(-params.liquidityDelta);
 
@@ -335,7 +341,7 @@ contract TranchesHook is BaseTestHooks {
         if (removedAmount > pos.amount) removedAmount = pos.amount;
 
         // Update pool totals
-        if (pos.tranche == Tranche.SENIOR) {
+        if (tranche == Tranche.SENIOR) {
             config.totalSeniorLiquidity -= removedAmount;
         } else {
             config.totalJuniorLiquidity -= removedAmount;
@@ -344,33 +350,32 @@ contract TranchesHook is BaseTestHooks {
         // Update or delete position
         pos.amount -= removedAmount;
         if (pos.amount == 0) {
-            emit TrancheWithdraw(poolId, lpAddress, pos.tranche, removedAmount);
+            emit TrancheWithdraw(poolId, lpAddress, tranche, removedAmount);
             delete positions[posKey];
         } else {
             // Recalculate rewardDebt for remaining amount
-            (uint256 rps0, uint256 rps1) = _getRewardPerShare(config, pos.tranche);
+            (uint256 rps0, uint256 rps1) = _getRewardPerShare(config, tranche);
             pos.rewardDebt0 = (pos.amount * rps0) / PRECISION;
             pos.rewardDebt1 = (pos.amount * rps1) / PRECISION;
-            emit TrancheWithdraw(poolId, lpAddress, pos.tranche, removedAmount);
+            emit TrancheWithdraw(poolId, lpAddress, tranche, removedAmount);
         }
 
-        // IL adjustment via return delta
-        (int128 hookDelta0, int128 hookDelta1) = _calculateILDelta(config, key, params, pos.tranche);
-
         // Settlement: Junior penalty (positive hookDelta) or Senior compensation (negative hookDelta)
-        // Only apply where direction matches tranche intent
-        if (pos.tranche == Tranche.JUNIOR) {
-            // Junior: only take tokens where hookDelta > 0 (zero out negative side)
-            if (hookDelta0 < 0) hookDelta0 = 0;
-            if (hookDelta1 < 0) hookDelta1 = 0;
-
-            if (hookDelta0 > 0) {
+        if (tranche == Tranche.JUNIOR) {
+            // Cap penalty at what the LP actually receives (can't take more than delta)
+            if (hookDelta0 > 0 && delta.amount0() > 0) {
+                if (hookDelta0 > delta.amount0()) hookDelta0 = delta.amount0();
                 POOL_MANAGER.take(key.currency0, address(this), uint128(hookDelta0));
                 ilReserve[poolId][key.currency0] += uint128(hookDelta0);
+            } else {
+                hookDelta0 = 0;
             }
-            if (hookDelta1 > 0) {
+            if (hookDelta1 > 0 && delta.amount1() > 0) {
+                if (hookDelta1 > delta.amount1()) hookDelta1 = delta.amount1();
                 POOL_MANAGER.take(key.currency1, address(this), uint128(hookDelta1));
                 ilReserve[poolId][key.currency1] += uint128(hookDelta1);
+            } else {
+                hookDelta1 = 0;
             }
         } else {
             // Senior: only give tokens where hookDelta < 0 (zero out positive side)
@@ -502,8 +507,9 @@ contract TranchesHook is BaseTestHooks {
 
     /// @dev Calculate IL adjustment deltas for an LP removing liquidity.
     ///      Compares hold-value (at initial price) vs actual-value (at current price).
-    ///      Senior: negative hookDelta (receives compensation from IL reserve).
-    ///      Junior: positive hookDelta (penalty taken to fund IL reserve).
+    ///      Uses per-token EXCESS (actual - hold): positive = LP gained that token from IL.
+    ///      Junior: positive hookDelta on excess tokens (penalty — take excess from LP).
+    ///      Senior: negative hookDelta on excess tokens (compensation — give from IL reserve).
     function _calculateILDelta(
         PoolConfig storage config,
         PoolKey calldata key,
@@ -524,21 +530,27 @@ contract TranchesHook is BaseTestHooks {
         (uint256 actual0, uint256 actual1) =
             LiquidityAmounts.getAmountsForLiquidity(currentSqrtPrice, sqrtA, sqrtB, liq);
 
-        // IL per token (positive = LP lost this token due to IL)
-        int256 il0 = int256(hold0) - int256(actual0);
-        int256 il1 = int256(hold1) - int256(actual1);
+        // Excess per token: positive = LP received MORE than they would holding (IL gave them this token)
+        int256 excess0 = int256(actual0) - int256(hold0);
+        int256 excess1 = int256(actual1) - int256(hold1);
 
         uint256 totalLiq = config.totalSeniorLiquidity + config.totalJuniorLiquidity;
         if (totalLiq == 0) return (0, 0);
 
         if (tranche == Tranche.SENIOR) {
-            // Senior gets compensated: negative hookDelta = give tokens to LP
-            hookDelta0 = -int128(il0 * int256(config.totalJuniorLiquidity) / int256(totalLiq));
-            hookDelta1 = -int128(il1 * int256(config.totalJuniorLiquidity) / int256(totalLiq));
+            // Senior compensation: receive excess tokens from IL reserve (negative hookDelta = give to LP)
+            // Use full excess amount; settlement will cap at available reserve
+            if (excess0 > 0) hookDelta0 = -int128(excess0);
+            if (excess1 > 0) hookDelta1 = -int128(excess1);
         } else {
-            // Junior absorbs Senior's portion of IL: positive hookDelta = take tokens from LP
-            hookDelta0 = int128(il0 * int256(config.totalSeniorLiquidity) / int256(totalLiq));
-            hookDelta1 = int128(il1 * int256(config.totalSeniorLiquidity) / int256(totalLiq));
+            // Junior penalty: take excess tokens (positive hookDelta = take from LP)
+            // Only for tokens where LP has excess
+            if (excess0 > 0) {
+                hookDelta0 = int128(excess0 * int256(config.totalSeniorLiquidity) / int256(totalLiq));
+            }
+            if (excess1 > 0) {
+                hookDelta1 = int128(excess1 * int256(config.totalSeniorLiquidity) / int256(totalLiq));
+            }
         }
     }
 

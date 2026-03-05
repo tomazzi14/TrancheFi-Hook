@@ -712,4 +712,145 @@ contract TranchesHookTest is Test, Deployers {
         assertEq(hookBalance0After, hookBalance0Before, "Hook currency0 balance unchanged");
         assertEq(hookBalance1After, hookBalance1Before, "Hook currency1 balance unchanged");
     }
+
+    // ============ IL Adjustment Tests ============
+
+    /// @dev IL adjustment: Junior absorbs IL when price moves
+    function test_ilAdjustment_juniorAbsorbsIL() public {
+        _addBothTranches();
+        vm.warp(block.timestamp + 1);
+
+        // Large swap to move the price significantly
+        _doSwap(-5e18);
+
+        // Roll past lock
+        vm.roll(block.number + 101);
+
+        // Check ilReserve before Junior removal
+        uint256 reserve0Before = hook.ilReserve(poolId, currency0);
+        uint256 reserve1Before = hook.ilReserve(poolId, currency1);
+
+        // Remove bob's junior position
+        IPoolManager.ModifyLiquidityParams memory removeParams = IPoolManager.ModifyLiquidityParams({
+            tickLower: LIQUIDITY_PARAMS.tickLower,
+            tickUpper: LIQUIDITY_PARAMS.tickUpper,
+            liquidityDelta: -LIQUIDITY_PARAMS.liquidityDelta,
+            salt: 0
+        });
+
+        vm.prank(bob);
+        hook.registerRemoval();
+        modifyLiquidityRouter.modifyLiquidity(poolKey, removeParams, abi.encode(bob));
+
+        // After Junior removal with price movement, ilReserve should increase for at least one token
+        uint256 reserve0After = hook.ilReserve(poolId, currency0);
+        uint256 reserve1After = hook.ilReserve(poolId, currency1);
+        assertTrue(
+            reserve0After > reserve0Before || reserve1After > reserve1Before,
+            "IL reserve should increase after Junior removal with price movement"
+        );
+    }
+
+    /// @dev IL adjustment: Senior gets compensated from IL reserve
+    function test_ilAdjustment_seniorProtected() public {
+        _addBothTranches();
+        vm.warp(block.timestamp + 1);
+
+        // Large swap to move the price
+        _doSwap(-5e18);
+
+        vm.roll(block.number + 101);
+
+        // Junior removes first — funds IL reserve
+        IPoolManager.ModifyLiquidityParams memory removeParams = IPoolManager.ModifyLiquidityParams({
+            tickLower: LIQUIDITY_PARAMS.tickLower,
+            tickUpper: LIQUIDITY_PARAMS.tickUpper,
+            liquidityDelta: -LIQUIDITY_PARAMS.liquidityDelta,
+            salt: 0
+        });
+
+        vm.prank(bob);
+        hook.registerRemoval();
+        modifyLiquidityRouter.modifyLiquidity(poolKey, removeParams, abi.encode(bob));
+
+        // Check IL reserve has tokens
+        uint256 reserve0 = hook.ilReserve(poolId, currency0);
+        uint256 reserve1 = hook.ilReserve(poolId, currency1);
+        uint256 totalReserveBefore = reserve0 + reserve1;
+
+        // Senior removes — should draw from IL reserve
+        vm.prank(alice);
+        hook.registerRemoval();
+        modifyLiquidityRouter.modifyLiquidity(poolKey, removeParams, abi.encode(alice));
+
+        uint256 reserve0After = hook.ilReserve(poolId, currency0);
+        uint256 reserve1After = hook.ilReserve(poolId, currency1);
+        uint256 totalReserveAfter = reserve0After + reserve1After;
+
+        // IL reserve should decrease (Senior drew compensation)
+        if (totalReserveBefore > 0) {
+            assertLt(totalReserveAfter, totalReserveBefore, "IL reserve should decrease after Senior withdrawal");
+        }
+    }
+
+    /// @dev IL adjustment: No IL when price unchanged
+    function test_ilAdjustment_noILWhenPriceUnchanged() public {
+        _addBothTranches();
+
+        // Roll past lock — no swap, price unchanged
+        vm.roll(block.number + 101);
+
+        IPoolManager.ModifyLiquidityParams memory removeParams = IPoolManager.ModifyLiquidityParams({
+            tickLower: LIQUIDITY_PARAMS.tickLower,
+            tickUpper: LIQUIDITY_PARAMS.tickUpper,
+            liquidityDelta: -LIQUIDITY_PARAMS.liquidityDelta,
+            salt: 0
+        });
+
+        // Remove Junior — should have no IL penalty
+        uint256 reserve0Before = hook.ilReserve(poolId, currency0);
+        uint256 reserve1Before = hook.ilReserve(poolId, currency1);
+
+        vm.prank(bob);
+        hook.registerRemoval();
+        modifyLiquidityRouter.modifyLiquidity(poolKey, removeParams, abi.encode(bob));
+
+        uint256 reserve0After = hook.ilReserve(poolId, currency0);
+        uint256 reserve1After = hook.ilReserve(poolId, currency1);
+
+        assertEq(reserve0After, reserve0Before, "No IL reserve change when price unchanged (currency0)");
+        assertEq(reserve1After, reserve1Before, "No IL reserve change when price unchanged (currency1)");
+    }
+
+    /// @dev IL adjustment: Senior compensation capped at available reserve
+    function test_ilAdjustment_seniorCappedAtReserve() public {
+        _addBothTranches();
+        vm.warp(block.timestamp + 1);
+
+        // Large swap to move price
+        _doSwap(-5e18);
+
+        vm.roll(block.number + 101);
+
+        // Senior removes FIRST (before any Junior funds the reserve)
+        IPoolManager.ModifyLiquidityParams memory removeParams = IPoolManager.ModifyLiquidityParams({
+            tickLower: LIQUIDITY_PARAMS.tickLower,
+            tickUpper: LIQUIDITY_PARAMS.tickUpper,
+            liquidityDelta: -LIQUIDITY_PARAMS.liquidityDelta,
+            salt: 0
+        });
+
+        // IL reserve should be empty
+        assertEq(hook.ilReserve(poolId, currency0), 0, "Reserve empty before any removal");
+        assertEq(hook.ilReserve(poolId, currency1), 0, "Reserve empty before any removal");
+
+        // Senior removes — compensation capped at 0 (no reserve), should not revert
+        vm.prank(alice);
+        hook.registerRemoval();
+        modifyLiquidityRouter.modifyLiquidity(poolKey, removeParams, abi.encode(alice));
+
+        // IL reserve still empty (Senior couldn't draw from empty reserve)
+        assertEq(hook.ilReserve(poolId, currency0), 0, "Reserve still empty after Senior removal");
+        assertEq(hook.ilReserve(poolId, currency1), 0, "Reserve still empty after Senior removal");
+    }
 }
