@@ -331,14 +331,12 @@ contract TranchesHook is BaseTestHooks {
         // Cache tranche before position may be deleted
         Tranche tranche = pos.tranche;
 
-        // Calculate IL delta BEFORE updating pool state (needs pre-decrement ratios)
-        (int128 hookDelta0, int128 hookDelta1) = _calculateILDelta(config, key, params, tranche);
-
-        // AUDIT5 FIX #1: use V4-native liquidity units (decimal-agnostic, matches deposit tracking)
+        // AUDIT6 FIX #1: cap removal at tracked position amount BEFORE IL calculation
         uint256 removedAmount = uint256(-params.liquidityDelta);
-
-        // Cap at position amount
         if (removedAmount > pos.amount) removedAmount = pos.amount;
+
+        // Calculate IL delta using tracked amount (not raw params.liquidityDelta)
+        (int128 hookDelta0, int128 hookDelta1) = _calculateILDelta(config, key, params, tranche, removedAmount);
 
         // Update pool totals
         if (tranche == Tranche.SENIOR) {
@@ -514,14 +512,16 @@ contract TranchesHook is BaseTestHooks {
         PoolConfig storage config,
         PoolKey calldata key,
         IPoolManager.ModifyLiquidityParams calldata params,
-        Tranche tranche
+        Tranche tranche,
+        uint256 trackedAmount
     ) internal view returns (int128 hookDelta0, int128 hookDelta1) {
         (uint160 currentSqrtPrice,,,) = POOL_MANAGER.getSlot0(key.toId());
         uint160 initialPrice = config.initialSqrtPriceX96;
 
         if (currentSqrtPrice == initialPrice) return (0, 0);
 
-        uint128 liq = uint128(uint256(-params.liquidityDelta));
+        // AUDIT6 FIX #1: use tracked position amount, not raw params.liquidityDelta
+        uint128 liq = uint128(trackedAmount);
         uint160 sqrtA = TickMath.getSqrtPriceAtTick(params.tickLower);
         uint160 sqrtB = TickMath.getSqrtPriceAtTick(params.tickUpper);
 
