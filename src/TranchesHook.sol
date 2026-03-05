@@ -354,8 +354,60 @@ contract TranchesHook is BaseTestHooks {
             emit TrancheWithdraw(poolId, lpAddress, pos.tranche, removedAmount);
         }
 
-        // TODO Phase 2: IL adjustment via return delta
-        return (IHooks.afterRemoveLiquidity.selector, toBalanceDelta(0, 0));
+        // IL adjustment via return delta
+        (int128 hookDelta0, int128 hookDelta1) = _calculateILDelta(config, key, params, pos.tranche);
+
+        // Settlement: Junior penalty (positive hookDelta) or Senior compensation (negative hookDelta)
+        // Only apply where direction matches tranche intent
+        if (pos.tranche == Tranche.JUNIOR) {
+            // Junior: only take tokens where hookDelta > 0 (zero out negative side)
+            if (hookDelta0 < 0) hookDelta0 = 0;
+            if (hookDelta1 < 0) hookDelta1 = 0;
+
+            if (hookDelta0 > 0) {
+                POOL_MANAGER.take(key.currency0, address(this), uint128(hookDelta0));
+                ilReserve[poolId][key.currency0] += uint128(hookDelta0);
+            }
+            if (hookDelta1 > 0) {
+                POOL_MANAGER.take(key.currency1, address(this), uint128(hookDelta1));
+                ilReserve[poolId][key.currency1] += uint128(hookDelta1);
+            }
+        } else {
+            // Senior: only give tokens where hookDelta < 0 (zero out positive side)
+            if (hookDelta0 > 0) hookDelta0 = 0;
+            if (hookDelta1 > 0) hookDelta1 = 0;
+
+            if (hookDelta0 < 0) {
+                uint128 comp0 = uint128(-hookDelta0);
+                uint256 avail0 = ilReserve[poolId][key.currency0];
+                if (comp0 > avail0) {
+                    comp0 = uint128(avail0);
+                    hookDelta0 = -int128(comp0);
+                }
+                if (comp0 > 0) {
+                    ilReserve[poolId][key.currency0] -= comp0;
+                    POOL_MANAGER.sync(key.currency0);
+                    key.currency0.transfer(address(POOL_MANAGER), comp0);
+                    POOL_MANAGER.settle();
+                }
+            }
+            if (hookDelta1 < 0) {
+                uint128 comp1 = uint128(-hookDelta1);
+                uint256 avail1 = ilReserve[poolId][key.currency1];
+                if (comp1 > avail1) {
+                    comp1 = uint128(avail1);
+                    hookDelta1 = -int128(comp1);
+                }
+                if (comp1 > 0) {
+                    ilReserve[poolId][key.currency1] -= comp1;
+                    POOL_MANAGER.sync(key.currency1);
+                    key.currency1.transfer(address(POOL_MANAGER), comp1);
+                    POOL_MANAGER.settle();
+                }
+            }
+        }
+
+        return (IHooks.afterRemoveLiquidity.selector, toBalanceDelta(hookDelta0, hookDelta1));
     }
 
     // ============ External Functions ============
