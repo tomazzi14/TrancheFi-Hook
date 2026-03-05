@@ -69,6 +69,7 @@ contract TranchesHook is BaseTestHooks {
     uint256 public constant SECONDS_PER_YEAR = 365 days;
     uint256 public constant MIN_BLOCKS_LOCK = 100; // anti-flash-loan
     uint128 public constant TRANCHE_FEE_BIPS = 10; // 0.1% of swap output
+    uint256 public constant MAX_IL_BIPS = 2000; // max 20% IL adjustment per removal (anti-manipulation)
 
     // ============ Immutables ============
 
@@ -337,6 +338,20 @@ contract TranchesHook is BaseTestHooks {
 
         // Calculate IL delta using tracked amount (not raw params.liquidityDelta)
         (int128 hookDelta0, int128 hookDelta1) = _calculateILDelta(config, key, params, tranche, removedAmount);
+
+        // AUDIT6 FIX #3: Cap IL hookDelta at MAX_IL_BIPS of callerDelta (anti-manipulation)
+        // Limits profit from spot-price sandwich attacks regardless of manipulation magnitude.
+        {
+            int128 abs0 = delta.amount0() >= 0 ? delta.amount0() : -delta.amount0();
+            int128 abs1 = delta.amount1() >= 0 ? delta.amount1() : -delta.amount1();
+            int128 maxCap0 = int128(int256(uint256(uint128(abs0)) * MAX_IL_BIPS / BASIS_POINTS));
+            int128 maxCap1 = int128(int256(uint256(uint128(abs1)) * MAX_IL_BIPS / BASIS_POINTS));
+
+            if (hookDelta0 > maxCap0) hookDelta0 = maxCap0;
+            if (hookDelta0 < -maxCap0) hookDelta0 = -maxCap0;
+            if (hookDelta1 > maxCap1) hookDelta1 = maxCap1;
+            if (hookDelta1 < -maxCap1) hookDelta1 = -maxCap1;
+        }
 
         // Update pool totals
         if (tranche == Tranche.SENIOR) {
@@ -623,7 +638,10 @@ contract TranchesHook is BaseTestHooks {
         }
     }
 
-    /// @dev Distributes fees via waterfall: Senior first, Junior gets the rest
+    /// @dev Distributes fees via waterfall: Senior gets proportional share with priority boost,
+    ///      Junior gets the remainder. seniorTargetAPY acts as a priority multiplier (not an
+    ///      annualized return target). E.g., 500 bps = 1.05x boost on Senior's proportional share.
+    ///      Both sides computed in token wei (AUDIT6 FIX #2: fixes L-units vs wei mismatch).
     /// DEEP FIX #3: tracks fees per currency
     /// DEEP FIX #8: proportional split when timeDelta == 0
     function _distributeWaterfall(PoolId poolId, PoolConfig storage config, uint256 totalFees, bool isCurrency0)
