@@ -862,16 +862,12 @@ contract TranchesHookTest is Test, Deployers {
         // Bob = Junior (full amount)
         vm.prank(bob);
         hook.registerDeposit(TranchesHook.Tranche.JUNIOR);
-        modifyLiquidityRouter.modifyLiquidity(
-            poolKey, LIQUIDITY_PARAMS, abi.encode(bob, TranchesHook.Tranche.JUNIOR)
-        );
+        modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, abi.encode(bob, TranchesHook.Tranche.JUNIOR));
 
         // Alice = Senior #1 (full amount)
         vm.prank(alice);
         hook.registerDeposit(TranchesHook.Tranche.SENIOR);
-        modifyLiquidityRouter.modifyLiquidity(
-            poolKey, LIQUIDITY_PARAMS, abi.encode(alice, TranchesHook.Tranche.SENIOR)
-        );
+        modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, abi.encode(alice, TranchesHook.Tranche.SENIOR));
 
         // Charlie = Senior #2 (half amount)
         IPoolManager.ModifyLiquidityParams memory halfParams = IPoolManager.ModifyLiquidityParams({
@@ -882,9 +878,7 @@ contract TranchesHookTest is Test, Deployers {
         });
         vm.prank(charlie);
         hook.registerDeposit(TranchesHook.Tranche.SENIOR);
-        modifyLiquidityRouter.modifyLiquidity(
-            poolKey, halfParams, abi.encode(charlie, TranchesHook.Tranche.SENIOR)
-        );
+        modifyLiquidityRouter.modifyLiquidity(poolKey, halfParams, abi.encode(charlie, TranchesHook.Tranche.SENIOR));
 
         // Swap to move price + advance blocks
         vm.warp(block.timestamp + 1);
@@ -959,8 +953,7 @@ contract TranchesHookTest is Test, Deployers {
         uint256 reserve0After1st = hook.ilReserve(poolId, currency0);
         uint256 reserve1After1st = hook.ilReserve(poolId, currency1);
         assertTrue(
-            reserve0After1st > 0 || reserve1After1st > 0,
-            "Reserve should increase after first partial Junior removal"
+            reserve0After1st > 0 || reserve1After1st > 0, "Reserve should increase after first partial Junior removal"
         );
 
         // Verify bob still has a position with remaining amount
@@ -1067,8 +1060,7 @@ contract TranchesHookTest is Test, Deployers {
         // The IL penalty should be bounded — not exceed MAX_IL_BIPS (20%) of what pool returned
         // We verify the reserve increase is reasonable (not zero, but also capped)
         assertTrue(
-            reserveIncrease0 > 0 || reserveIncrease1 > 0,
-            "Some IL penalty should exist after extreme price move"
+            reserveIncrease0 > 0 || reserveIncrease1 > 0, "Some IL penalty should exist after extreme price move"
         );
 
         // With MAX_IL_BIPS = 2000 (20%), the penalty cannot exceed 20% of the removal delta
