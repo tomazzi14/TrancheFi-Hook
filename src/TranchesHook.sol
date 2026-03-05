@@ -448,6 +448,48 @@ contract TranchesHook is BaseTestHooks {
 
     // ============ Internal Functions ============
 
+    /// @dev Calculate IL adjustment deltas for an LP removing liquidity.
+    ///      Compares hold-value (at initial price) vs actual-value (at current price).
+    ///      Senior: negative hookDelta (receives compensation from IL reserve).
+    ///      Junior: positive hookDelta (penalty taken to fund IL reserve).
+    function _calculateILDelta(
+        PoolConfig storage config,
+        PoolKey calldata key,
+        IPoolManager.ModifyLiquidityParams calldata params,
+        Tranche tranche
+    ) internal view returns (int128 hookDelta0, int128 hookDelta1) {
+        (uint160 currentSqrtPrice,,,) = POOL_MANAGER.getSlot0(key.toId());
+        uint160 initialPrice = config.initialSqrtPriceX96;
+
+        if (currentSqrtPrice == initialPrice) return (0, 0);
+
+        uint128 liq = uint128(uint256(-params.liquidityDelta));
+        uint160 sqrtA = TickMath.getSqrtPriceAtTick(params.tickLower);
+        uint160 sqrtB = TickMath.getSqrtPriceAtTick(params.tickUpper);
+
+        // What LP would have at initial price vs current price
+        (uint256 hold0, uint256 hold1) = LiquidityAmounts.getAmountsForLiquidity(initialPrice, sqrtA, sqrtB, liq);
+        (uint256 actual0, uint256 actual1) =
+            LiquidityAmounts.getAmountsForLiquidity(currentSqrtPrice, sqrtA, sqrtB, liq);
+
+        // IL per token (positive = LP lost this token due to IL)
+        int256 il0 = int256(hold0) - int256(actual0);
+        int256 il1 = int256(hold1) - int256(actual1);
+
+        uint256 totalLiq = config.totalSeniorLiquidity + config.totalJuniorLiquidity;
+        if (totalLiq == 0) return (0, 0);
+
+        if (tranche == Tranche.SENIOR) {
+            // Senior gets compensated: negative hookDelta = give tokens to LP
+            hookDelta0 = -int128(il0 * int256(config.totalJuniorLiquidity) / int256(totalLiq));
+            hookDelta1 = -int128(il1 * int256(config.totalJuniorLiquidity) / int256(totalLiq));
+        } else {
+            // Junior absorbs Senior's portion of IL: positive hookDelta = take tokens from LP
+            hookDelta0 = int128(il0 * int256(config.totalSeniorLiquidity) / int256(totalLiq));
+            hookDelta1 = int128(il1 * int256(config.totalSeniorLiquidity) / int256(totalLiq));
+        }
+    }
+
     /// @dev Register or accumulate a position (extracted to avoid stack-too-deep)
     function _registerPosition(
         address lpAddress,
