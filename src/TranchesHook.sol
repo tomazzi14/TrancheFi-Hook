@@ -95,6 +95,9 @@ contract TranchesHook is BaseTestHooks {
     mapping(address => Tranche) private _depositTranche;
     mapping(address => bool) private _removalRegistered;
 
+    /// @dev IL reserve: tokens taken from Junior IL penalties, used to compensate Seniors
+    mapping(PoolId => mapping(Currency => uint256)) public ilReserve;
+
     /// @dev AUDIT4 FIX #1: trusted router for atomic registration
     address public trustedRouter;
 
