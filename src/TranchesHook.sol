@@ -635,12 +635,18 @@ contract TranchesHook is BaseTestHooks {
         uint256 seniorOwed = 0;
         uint256 totalLiquidity = config.totalSeniorLiquidity + config.totalJuniorLiquidity;
 
-        if (config.totalSeniorLiquidity > 0 && timeDelta > 0) {
-            seniorOwed =
-                (config.totalSeniorLiquidity * config.seniorTargetAPY * timeDelta) / (BASIS_POINTS * SECONDS_PER_YEAR);
-        } else if (config.totalSeniorLiquidity > 0 && timeDelta == 0 && totalLiquidity > 0) {
-            // DEEP FIX #8: same-block — split proportionally to prevent flash-loan manipulation
-            seniorOwed = (totalFees * config.totalSeniorLiquidity) / totalLiquidity;
+        if (config.totalSeniorLiquidity > 0 && totalLiquidity > 0) {
+            // AUDIT6 FIX #2: proportional share in token wei (fixes L-units vs wei mismatch)
+            uint256 seniorShare = (totalFees * config.totalSeniorLiquidity) / totalLiquidity;
+            if (timeDelta > 0) {
+                // Apply APY priority: Senior gets boosted share (e.g., 5% APY → 1.05x)
+                uint256 priorityMultiplier = BASIS_POINTS + config.seniorTargetAPY;
+                seniorOwed = (seniorShare * priorityMultiplier) / BASIS_POINTS;
+                if (seniorOwed > totalFees) seniorOwed = totalFees;
+            } else {
+                // DEEP FIX #8: same-block — proportional split (no priority to prevent flash-loan)
+                seniorOwed = seniorShare;
+            }
         }
 
         uint256 seniorFees;
