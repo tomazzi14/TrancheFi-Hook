@@ -90,6 +90,9 @@ contract TranchesHook is BaseTestHooks {
     mapping(address => Tranche) private _depositTranche;
     mapping(address => bool) private _removalRegistered;
 
+    /// @dev AUDIT4 FIX #1: trusted router for atomic registration
+    address public trustedRouter;
+
     // ============ Events ============
 
     event TranchDeposit(PoolId indexed poolId, address indexed lp, Tranche tranche, uint256 amount);
@@ -99,6 +102,7 @@ contract TranchesHook is BaseTestHooks {
     event PoolConfigured(PoolId indexed poolId, uint256 seniorTargetAPY, uint256 maxSeniorRatio);
     event RiskParameterAdjusted(PoolId indexed poolId, uint256 newSeniorTargetAPY);
     event AuthorizedRSCUpdated(address indexed oldRSC, address indexed newRSC);
+    event TrustedRouterUpdated(address indexed oldRouter, address indexed newRouter);
 
     // ============ Errors ============
 
@@ -113,6 +117,7 @@ contract TranchesHook is BaseTestHooks {
     error TrancheMismatch(); // DEEP FIX #1
     error DepositNotRegistered(); // AUDIT3 FIX #1
     error RemovalNotRegistered(); // AUDIT3 FIX #1
+    error NotTrustedRouter(); // AUDIT4 FIX #1
 
     // ============ Constructor ============
 
@@ -412,6 +417,31 @@ contract TranchesHook is BaseTestHooks {
     /// @dev Must be called by the LP before calling PoolManager.modifyLiquidity
     function registerRemoval() external {
         _removalRegistered[msg.sender] = true;
+    }
+
+    // ============ AUDIT4 FIX #1: Trusted Router Functions ============
+
+    /// @notice Set the trusted router for atomic registration (only DEPLOYER)
+    function setTrustedRouter(address _router) external {
+        if (msg.sender != DEPLOYER) revert Unauthorized();
+        if (_router == address(0)) revert ZeroAddress();
+        emit TrustedRouterUpdated(trustedRouter, _router);
+        trustedRouter = _router;
+    }
+
+    /// @notice Register deposit on behalf of LP (only trusted router)
+    /// @dev Called atomically by TranchesRouter before modifyLiquidity
+    function registerDepositFor(address lp, Tranche tranche) external {
+        if (msg.sender != trustedRouter) revert NotTrustedRouter();
+        _depositRegistered[lp] = true;
+        _depositTranche[lp] = tranche;
+    }
+
+    /// @notice Register removal on behalf of LP (only trusted router)
+    /// @dev Called atomically by TranchesRouter before modifyLiquidity
+    function registerRemovalFor(address lp) external {
+        if (msg.sender != trustedRouter) revert NotTrustedRouter();
+        _removalRegistered[lp] = true;
     }
 
     // ============ Internal Functions ============
