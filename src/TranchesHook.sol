@@ -10,6 +10,10 @@ import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {BalanceDelta, toBalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {Currency, CurrencyLibrary} from "v4-core/types/Currency.sol";
 import {SafeCast} from "v4-core/libraries/SafeCast.sol";
+import {StateLibrary} from "v4-core/libraries/StateLibrary.sol";
+import {TickMath} from "v4-core/libraries/TickMath.sol";
+import {FullMath} from "v4-core/libraries/FullMath.sol";
+import {LiquidityAmounts} from "v4-core-test/utils/LiquidityAmounts.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -22,6 +26,7 @@ contract TranchesHook is BaseTestHooks {
     using SafeCast for uint256;
     using CurrencyLibrary for Currency;
     using SafeERC20 for IERC20;
+    using StateLibrary for IPoolManager;
 
     // ============ Enums ============
 
