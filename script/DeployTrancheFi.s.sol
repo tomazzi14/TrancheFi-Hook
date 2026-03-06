@@ -8,19 +8,18 @@ import {TranchesHook} from "../src/TranchesHook.sol";
 import {TranchesRouter} from "../src/TranchesRouter.sol";
 import {TrancheFiCallbackReceiver} from "../src/TrancheFiCallbackReceiver.sol";
 import {HookMiner} from "./HookMiner.sol";
+import {HookDeployer} from "./HookDeployer.sol";
 
 /// @title DeployTrancheFi — Unichain Sepolia deployment script
-/// @notice Deploys TranchesHook (via CREATE2), TranchesRouter, and TrancheFiCallbackReceiver.
-///         Then wires them together (setTrustedRouter, setAuthorizedRSC).
+/// @notice Deploys TranchesHook (via CREATE2 through a custom factory that retains
+///         DEPLOYER privilege), TranchesRouter, and TrancheFiCallbackReceiver.
+///         Then wires them together via the factory's configure().
 contract DeployTrancheFi is Script {
     // ─── Unichain Sepolia constants ───
     IPoolManager constant POOL_MANAGER = IPoolManager(0x00B036B58a818B1BC34d502D3fE730Db729e62AC);
 
     // Reactive Network callback proxy on Unichain (placeholder — update when available)
     address constant CALLBACK_PROXY = address(0xDEAD);
-
-    // Deterministic CREATE2 deployer (Arachnid's factory, same on all EVM chains)
-    address constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
     // Hook flags: afterInitialize | afterAddLiquidity | afterRemoveLiquidity |
     //             afterSwap | afterSwapReturnsDelta | afterRemoveLiquidityReturnsDelta
@@ -35,40 +34,36 @@ contract DeployTrancheFi is Script {
 
         vm.startBroadcast(deployerKey);
 
-        // ── 1. Mine CREATE2 salt for hook address ──
-        // Use the deterministic CREATE2 factory as deployer for address computation
+        // ── 1. Deploy HookDeployer factory ──
+        // This factory becomes the hook's DEPLOYER and can call admin functions later.
+        HookDeployer factory = new HookDeployer();
+        console.log("HookDeployer factory:", address(factory));
+
+        // ── 2. Mine CREATE2 salt for hook address ──
         bytes memory creationCode = abi.encodePacked(type(TranchesHook).creationCode, abi.encode(POOL_MANAGER));
 
-        (uint256 salt, address expectedHook) = HookMiner.find(CREATE2_DEPLOYER, HOOK_FLAGS, creationCode, 10_000);
+        (uint256 salt, address expectedHook) = HookMiner.find(address(factory), HOOK_FLAGS, creationCode, 10_000);
 
         console.log("CREATE2 salt found:", salt);
         console.log("Expected hook addr:", expectedHook);
 
-        // ── 2. Deploy TranchesHook via CREATE2 factory ──
-        // Arachnid's factory takes: salt (32 bytes) ++ initCode as calldata
-        bytes memory payload = abi.encodePacked(bytes32(salt), creationCode);
-        (bool success,) = CREATE2_DEPLOYER.call(payload);
-        require(success, "CREATE2 deploy failed");
-
-        TranchesHook hook = TranchesHook(expectedHook);
-        // Verify the hook has code (deployment succeeded)
-        require(address(hook).code.length > 0, "Hook not deployed");
+        // ── 3. Deploy TranchesHook via factory's CREATE2 ──
+        address hookAddr = factory.deploy(creationCode, salt);
+        require(hookAddr == expectedHook, "Address mismatch");
+        TranchesHook hook = TranchesHook(hookAddr);
         console.log("TranchesHook deployed:", address(hook));
 
-        // ── 3. Deploy TranchesRouter ──
+        // ── 4. Deploy TranchesRouter ──
         TranchesRouter router = new TranchesRouter(POOL_MANAGER, hook);
         console.log("TranchesRouter deployed:", address(router));
 
-        // ── 4. Deploy TrancheFiCallbackReceiver ──
+        // ── 5. Deploy TrancheFiCallbackReceiver ──
         TrancheFiCallbackReceiver receiver = new TrancheFiCallbackReceiver(CALLBACK_PROXY, address(hook));
         console.log("TrancheFiCallbackReceiver deployed:", address(receiver));
 
-        // ── 5. Wire contracts together ──
-        hook.setTrustedRouter(address(router));
-        console.log("TrustedRouter set on hook");
-
-        hook.setAuthorizedRSC(address(receiver));
-        console.log("AuthorizedRSC set on hook");
+        // ── 6. Wire contracts together (factory is the hook's DEPLOYER) ──
+        factory.configure(hook, address(router), address(receiver));
+        console.log("Hook configured: trustedRouter + authorizedRSC set");
 
         vm.stopBroadcast();
 
