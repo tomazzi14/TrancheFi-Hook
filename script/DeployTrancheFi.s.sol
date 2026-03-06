@@ -19,6 +19,9 @@ contract DeployTrancheFi is Script {
     // Reactive Network callback proxy on Unichain (placeholder — update when available)
     address constant CALLBACK_PROXY = address(0xDEAD);
 
+    // Deterministic CREATE2 deployer (Arachnid's factory, same on all EVM chains)
+    address constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
+
     // Hook flags: afterInitialize | afterAddLiquidity | afterRemoveLiquidity |
     //             afterSwap | afterSwapReturnsDelta | afterRemoveLiquidityReturnsDelta
     uint160 constant HOOK_FLAGS = uint160(
@@ -33,20 +36,23 @@ contract DeployTrancheFi is Script {
         vm.startBroadcast(deployerKey);
 
         // ── 1. Mine CREATE2 salt for hook address ──
+        // Use the deterministic CREATE2 factory as deployer for address computation
         bytes memory creationCode = abi.encodePacked(type(TranchesHook).creationCode, abi.encode(POOL_MANAGER));
 
-        (uint256 salt, address expectedHook) = HookMiner.find(msg.sender, HOOK_FLAGS, creationCode, 10_000);
+        (uint256 salt, address expectedHook) = HookMiner.find(CREATE2_DEPLOYER, HOOK_FLAGS, creationCode, 10_000);
 
         console.log("CREATE2 salt found:", salt);
         console.log("Expected hook addr:", expectedHook);
 
-        // ── 2. Deploy TranchesHook via CREATE2 ──
-        TranchesHook hook;
-        assembly {
-            hook := create2(0, add(creationCode, 0x20), mload(creationCode), salt)
-        }
-        require(address(hook) != address(0), "CREATE2 failed");
-        require(address(hook) == expectedHook, "Address mismatch");
+        // ── 2. Deploy TranchesHook via CREATE2 factory ──
+        // Arachnid's factory takes: salt (32 bytes) ++ initCode as calldata
+        bytes memory payload = abi.encodePacked(bytes32(salt), creationCode);
+        (bool success,) = CREATE2_DEPLOYER.call(payload);
+        require(success, "CREATE2 deploy failed");
+
+        TranchesHook hook = TranchesHook(expectedHook);
+        // Verify the hook has code (deployment succeeded)
+        require(address(hook).code.length > 0, "Hook not deployed");
         console.log("TranchesHook deployed:", address(hook));
 
         // ── 3. Deploy TranchesRouter ──
