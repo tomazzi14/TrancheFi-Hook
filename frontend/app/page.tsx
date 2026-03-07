@@ -25,7 +25,7 @@ export default function Home() {
           </div>
           <div className="rounded-lg border bg-card p-4 text-card-foreground">
             <p className="text-sm text-muted-foreground">Junior Tranche</p>
-            <p className="text-2xl font-bold text-junior">Leveraged</p>
+            <p className="text-2xl font-bold text-junior">Variable</p>
           </div>
         </div>
         <div className="mt-6">
