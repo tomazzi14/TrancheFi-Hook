@@ -19,10 +19,30 @@ interface DepositFormProps {
   tranche: 0 | 1
 }
 
+const WETH_USDC_RATE = 2000 // 1 mWETH = 2000 mUSDC
+
 export function DepositForm({ tranche }: DepositFormProps) {
   const [wethAmount, setWethAmount] = useState("")
   const [usdcAmount, setUsdcAmount] = useState("")
   const { address, isConnected } = useAccount()
+
+  const handleWethChange = (val: string) => {
+    setWethAmount(val)
+    if (val && Number(val) > 0) {
+      setUsdcAmount((Number(val) * WETH_USDC_RATE).toString())
+    } else {
+      setUsdcAmount("")
+    }
+  }
+
+  const handleUsdcChange = (val: string) => {
+    setUsdcAmount(val)
+    if (val && Number(val) > 0) {
+      setWethAmount((Number(val) / WETH_USDC_RATE).toString())
+    } else {
+      setWethAmount("")
+    }
+  }
 
   // Balances
   const { data: wethBalance } = useReadContract({
@@ -135,7 +155,7 @@ export function DepositForm({ tranche }: DepositFormProps) {
             type="number"
             placeholder="0.0"
             value={wethAmount}
-            onChange={(e) => setWethAmount(e.target.value)}
+            onChange={(e) => handleWethChange(e.target.value)}
             className="text-lg"
             min="0"
             step="0.01"
@@ -160,6 +180,10 @@ export function DepositForm({ tranche }: DepositFormProps) {
         </div>
       </div>
 
+      <p className="text-center text-xs text-muted-foreground">
+        1 mWETH = {WETH_USDC_RATE.toLocaleString()} mUSDC
+      </p>
+
       {/* mUSDC Input */}
       <div>
         <div className="mb-2 flex items-center justify-between">
@@ -173,7 +197,7 @@ export function DepositForm({ tranche }: DepositFormProps) {
             type="number"
             placeholder="0.0"
             value={usdcAmount}
-            onChange={(e) => setUsdcAmount(e.target.value)}
+            onChange={(e) => handleUsdcChange(e.target.value)}
             className="text-lg"
             min="0"
             step="1"
