@@ -225,8 +225,8 @@ contract TranchesHook is BaseTestHooks {
         // AUDIT5 FIX #1: use V4-native liquidity units (decimal-agnostic)
         uint256 amount = uint256(params.liquidityDelta);
 
-        // Senior ratio cap enforced always
-        if (tranche == Tranche.SENIOR) {
+        // Senior ratio cap — only enforced when both tranches have liquidity
+        if (tranche == Tranche.SENIOR && config.totalJuniorLiquidity > 0) {
             uint256 totalAfter = config.totalSeniorLiquidity + config.totalJuniorLiquidity + amount;
             uint256 seniorAfter = config.totalSeniorLiquidity + amount;
             uint256 ratio = (seniorAfter * BASIS_POINTS) / totalAfter;
