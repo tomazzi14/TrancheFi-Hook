@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useAccount, useReadContract } from "wagmi"
-import { parseEther, parseUnits } from "viem"
+import { parseEther } from "viem"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { useSwap } from "@/hooks/useSwap"
 import { useTokenApproval } from "@/hooks/useTokenApproval"
@@ -30,7 +30,7 @@ export default function SwapPage() {
   const isWethInput = direction === "wethToUsdc"
   const inputToken = isWethInput ? "mWETH" : "mUSDC"
   const outputToken = isWethInput ? "mUSDC" : "mWETH"
-  const inputDecimals = isWethInput ? 18 : 6
+  const inputDecimals = 18 // Both MockERC20 tokens use 18 decimals
 
   // Estimated output (simple rate, real output depends on pool liquidity)
   const estimatedOutput = inputAmount
@@ -103,9 +103,7 @@ export default function SwapPage() {
 
   const parsedInput =
     inputAmount && Number(inputAmount) > 0
-      ? isWethInput
-        ? parseEther(inputAmount)
-        : parseUnits(inputAmount, 6)
+      ? parseEther(inputAmount)
       : 0n
 
   // zeroForOne = true means selling currency0 (mWETH) for currency1 (mUSDC)
@@ -118,13 +116,16 @@ export default function SwapPage() {
     swap(zeroForOne, parsedInput)
   }
 
-  const formatBalance = (bal: bigint | undefined, decimals: number) => {
+  const formatBalance = (bal: bigint | undefined) => {
     if (!bal) return "0"
-    return (Number(bal) / 10 ** decimals).toFixed(decimals === 6 ? 2 : 4)
+    const divisor = 10n ** 18n
+    const whole = bal / divisor
+    const frac = bal % divisor
+    const fracStr = frac.toString().padStart(18, "0").slice(0, 4)
+    return `${whole.toLocaleString()}.${fracStr}`
   }
 
   const inputBalance = isWethInput ? wethBalance : usdcBalance
-  const inputBalanceDecimals = isWethInput ? 18 : 6
 
   return (
     <div className="mx-auto max-w-md flex flex-col gap-8">
@@ -161,7 +162,7 @@ export default function SwapPage() {
               <label className="text-sm font-medium">You pay</label>
               <span className="text-xs text-muted-foreground">
                 Balance:{" "}
-                {formatBalance(inputBalance as bigint, inputBalanceDecimals)}
+                {formatBalance(inputBalance as bigint)}
               </span>
             </div>
             <div className="flex items-center gap-2 rounded-lg border bg-secondary/50 p-3">

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useAccount, useReadContract } from "wagmi"
-import { parseEther, parseUnits } from "viem"
+import { parseEther } from "viem"
 import { useAddLiquidity } from "@/hooks/useAddLiquidity"
 import { useTokenApproval } from "@/hooks/useTokenApproval"
 import {
@@ -120,7 +120,7 @@ export function DepositForm({ tranche }: DepositFormProps) {
   }
 
   const parsedWETH = wethAmount ? parseEther(wethAmount) : 0n
-  const parsedUSDC = usdcAmount ? parseUnits(usdcAmount, 6) : 0n
+  const parsedUSDC = usdcAmount ? parseEther(usdcAmount) : 0n // MockERC20 uses 18 decimals
   const hasAmounts = parsedWETH > 0n || parsedUSDC > 0n
 
   const showApproveWETH = parsedWETH > 0n && needsApprovalWETH(parsedWETH)
@@ -139,7 +139,11 @@ export function DepositForm({ tranche }: DepositFormProps) {
 
   const formatBalance = (bal: bigint | undefined, decimals: number) => {
     if (!bal) return "0"
-    return (Number(bal) / 10 ** decimals).toFixed(decimals === 6 ? 2 : 4)
+    const divisor = 10n ** BigInt(decimals)
+    const whole = bal / divisor
+    const frac = bal % divisor
+    const fracStr = frac.toString().padStart(decimals, "0").slice(0, 4)
+    return `${whole.toLocaleString()}.${fracStr}`
   }
 
   return (
@@ -191,7 +195,7 @@ export function DepositForm({ tranche }: DepositFormProps) {
         <div className="mb-2 flex items-center justify-between">
           <label className="text-sm font-medium">mUSDC</label>
           <span className="text-xs text-muted-foreground">
-            Balance: {formatBalance(usdcBalance as bigint, 6)}
+            Balance: {formatBalance(usdcBalance as bigint, 18)}
           </span>
         </div>
         <div className="flex gap-2">

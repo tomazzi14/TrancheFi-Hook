@@ -2,15 +2,18 @@
 
 import { useUserPosition } from "@/hooks/useUserPosition"
 import { usePendingFees } from "@/hooks/usePendingFees"
+import { usePoolStats } from "@/hooks/usePoolStats"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Separator } from "@/components/ui/separator"
 import { formatEth } from "@/lib/utils"
 import { Shield, Zap } from "lucide-react"
 
 export function PositionCard() {
   const { data: position, isLoading: posLoading } = useUserPosition()
   const { data: fees, isLoading: feesLoading } = usePendingFees()
+  const { data: poolStats } = usePoolStats()
 
   const isLoading = posLoading || feesLoading
 
@@ -35,6 +38,16 @@ export function PositionCard() {
 
   const hasPosition = (amount as bigint) > 0n
   const isSenior = Number(tranche) === 0
+  const liquidityAmount = amount as bigint
+
+  // Pool stats: [totalSenior, totalJunior, seniorRatio, targetAPY, volatility]
+  const totalSenior = poolStats ? (poolStats as bigint[])[0] : 0n
+  const totalJunior = poolStats ? (poolStats as bigint[])[1] : 0n
+  const totalLiquidity = totalSenior + totalJunior
+
+  // At 1:1 sqrtPrice with full range, each unit of liquidity ≈ equal amounts of both tokens
+  const estimatedMweth = liquidityAmount
+  const estimatedMusdc = liquidityAmount
 
   if (!hasPosition) {
     return (
@@ -75,12 +88,28 @@ export function PositionCard() {
           {isSenior ? "Senior" : "Junior"}
         </Badge>
       </CardHeader>
-      <CardContent>
-        <div className="grid gap-4 sm:grid-cols-3">
+      <CardContent className="space-y-4">
+        <div>
+          <p className="text-sm text-muted-foreground mb-2">Deposited Value</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg bg-muted/50 p-3">
+              <p className="text-xs text-muted-foreground">mWETH</p>
+              <p className="text-lg font-semibold">{formatEth(estimatedMweth)}</p>
+            </div>
+            <div className="rounded-lg bg-muted/50 p-3">
+              <p className="text-xs text-muted-foreground">mUSDC</p>
+              <p className="text-lg font-semibold">{formatEth(estimatedMusdc)}</p>
+            </div>
+          </div>
+        </div>
+
+        <Separator />
+
+        <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <p className="text-sm text-muted-foreground">Liquidity</p>
+            <p className="text-sm text-muted-foreground">Liquidity Units</p>
             <p className="text-xl font-semibold">
-              {formatEth(amount as bigint)}
+              {formatEth(liquidityAmount)}
             </p>
           </div>
           <div>
@@ -89,16 +118,35 @@ export function PositionCard() {
               #{(depositBlock as bigint).toString()}
             </p>
           </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Pending Fees</p>
-            <p className="text-lg font-semibold">
-              <span className="text-muted-foreground text-sm">T0:</span>{" "}
-              {formatEth(pending0 as bigint)}{" "}
-              <span className="text-muted-foreground text-sm">T1:</span>{" "}
-              {formatEth(pending1 as bigint)}
-            </p>
+        </div>
+
+        <Separator />
+
+        <div>
+          <p className="text-sm text-muted-foreground mb-2">Pending Fees</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg bg-muted/50 p-3">
+              <p className="text-xs text-muted-foreground">mWETH</p>
+              <p className="text-lg font-semibold">{formatEth(pending0 as bigint)}</p>
+            </div>
+            <div className="rounded-lg bg-muted/50 p-3">
+              <p className="text-xs text-muted-foreground">mUSDC</p>
+              <p className="text-lg font-semibold">{formatEth(pending1 as bigint)}</p>
+            </div>
           </div>
         </div>
+
+        {totalLiquidity > 0n && (
+          <>
+            <Separator />
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Your share of pool</span>
+              <span className="font-medium">
+                {((Number(liquidityAmount) / Number(totalLiquidity)) * 100).toFixed(2)}%
+              </span>
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   )
