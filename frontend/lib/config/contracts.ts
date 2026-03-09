@@ -1,5 +1,6 @@
 import { TranchesHookABI } from "../abis/TranchesHook"
 import { TranchesRouterABI } from "../abis/TranchesRouter"
+import { PoolSwapTestABI } from "../abis/PoolSwapTest"
 
 // ─── Deployed on Unichain Sepolia (Chain ID 1301) ───
 export const TRANCHES_HOOK_ADDRESS =
@@ -42,5 +43,19 @@ export const routerContract = {
   address: TRANCHES_ROUTER_ADDRESS,
   abi: TranchesRouterABI,
 } as const
+
+// ─── Swap Router (PoolSwapTest) — UPDATE after deployment ───
+export const SWAP_ROUTER_ADDRESS =
+  "0x0000000000000000000000000000000000000000" as const // TODO: deploy with DeploySwapRouter.s.sol
+
+export const swapRouterContract = {
+  address: SWAP_ROUTER_ADDRESS,
+  abi: PoolSwapTestABI,
+} as const
+
+// sqrtPriceLimitX96 boundaries for swaps
+export const MIN_SQRT_PRICE_LIMIT = 4295128739n // TickMath.MIN_SQRT_PRICE + 1
+export const MAX_SQRT_PRICE_LIMIT =
+  1461446703485210103287273052203988822378723970342n // TickMath.MAX_SQRT_PRICE - 1
 
 export const BASIS_POINTS = 10_000n

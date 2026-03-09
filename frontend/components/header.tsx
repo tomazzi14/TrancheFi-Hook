@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/" },
   { label: "Deposit", href: "/deposit" },
+  { label: "Swap", href: "/swap" },
   { label: "Positions", href: "/positions" },
   { label: "Simulator", href: "/simulator" },
 ]

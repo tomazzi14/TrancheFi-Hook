@@ -17,11 +17,13 @@ import { Loader2, CheckCircle2 } from "lucide-react"
 
 interface DepositFormProps {
   tranche: 0 | 1
+  tickLower: number
+  tickUpper: number
 }
 
 const WETH_USDC_RATE = 2000 // 1 mWETH = 2000 mUSDC
 
-export function DepositForm({ tranche }: DepositFormProps) {
+export function DepositForm({ tranche, tickLower, tickUpper }: DepositFormProps) {
   const [wethAmount, setWethAmount] = useState("")
   const [usdcAmount, setUsdcAmount] = useState("")
   const { address, isConnected } = useAccount()
@@ -132,7 +134,7 @@ export function DepositForm({ tranche }: DepositFormProps) {
 
   const handleDeposit = () => {
     if (liquidityDelta <= 0n) return
-    addLiquidity(liquidityDelta, tranche)
+    addLiquidity(liquidityDelta, tranche, tickLower, tickUpper)
   }
 
   const formatBalance = (bal: bigint | undefined, decimals: number) => {

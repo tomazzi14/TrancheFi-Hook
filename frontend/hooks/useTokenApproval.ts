@@ -10,14 +10,17 @@ import { TRANCHES_ROUTER_ADDRESS } from "@/lib/config/contracts"
 const MAX_UINT256 =
   115792089237316195423570985008687907853269984665640564039457584007913129639935n
 
-export function useTokenApproval(tokenAddress: `0x${string}`) {
+export function useTokenApproval(
+  tokenAddress: `0x${string}`,
+  spender: `0x${string}` = TRANCHES_ROUTER_ADDRESS
+) {
   const { address } = useAccount()
 
   const { data: allowance } = useReadContract({
     address: tokenAddress,
     abi: ERC20ABI,
     functionName: "allowance",
-    args: address ? [address, TRANCHES_ROUTER_ADDRESS] : undefined,
+    args: address ? [address, spender] : undefined,
     query: { enabled: !!address },
   })
 
@@ -30,7 +33,7 @@ export function useTokenApproval(tokenAddress: `0x${string}`) {
       address: tokenAddress,
       abi: ERC20ABI,
       functionName: "approve",
-      args: [TRANCHES_ROUTER_ADDRESS, MAX_UINT256],
+      args: [spender, MAX_UINT256],
     })
   }
 
