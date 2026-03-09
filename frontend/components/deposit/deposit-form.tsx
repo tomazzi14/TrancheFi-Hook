@@ -1,11 +1,15 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useAccount } from "wagmi"
-import { parseEther } from "viem"
+import { useAccount, useReadContract } from "wagmi"
+import { parseEther, parseUnits } from "viem"
 import { useAddLiquidity } from "@/hooks/useAddLiquidity"
 import { useTokenApproval } from "@/hooks/useTokenApproval"
-import { TRANCHES_ROUTER_ADDRESS } from "@/lib/config/contracts"
+import {
+  MOCK_WETH_ADDRESS,
+  MOCK_USDC_ADDRESS,
+} from "@/lib/config/contracts"
+import { ERC20ABI } from "@/lib/abis/ERC20"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
@@ -16,17 +20,45 @@ interface DepositFormProps {
 }
 
 export function DepositForm({ tranche }: DepositFormProps) {
-  const [amount, setAmount] = useState("")
-  const { isConnected } = useAccount()
+  const [wethAmount, setWethAmount] = useState("")
+  const [usdcAmount, setUsdcAmount] = useState("")
+  const { address, isConnected } = useAccount()
+
+  // Balances
+  const { data: wethBalance } = useReadContract({
+    address: MOCK_WETH_ADDRESS as `0x${string}`,
+    abi: ERC20ABI,
+    functionName: "balanceOf",
+    args: address ? [address] : undefined,
+    query: { enabled: !!address },
+  })
+
+  const { data: usdcBalance } = useReadContract({
+    address: MOCK_USDC_ADDRESS as `0x${string}`,
+    abi: ERC20ABI,
+    functionName: "balanceOf",
+    args: address ? [address] : undefined,
+    query: { enabled: !!address },
+  })
+
+  // Approvals
+  const {
+    approve: approveWETH,
+    needsApproval: needsApprovalWETH,
+    isPending: isApprovingWETH,
+    isConfirming: isConfirmingWETH,
+    isSuccess: isSuccessWETH,
+  } = useTokenApproval(MOCK_WETH_ADDRESS as `0x${string}`)
 
   const {
-    approve,
-    needsApproval,
-    isPending: isApproving,
-    isConfirming: isApprovalConfirming,
-    isSuccess: isApprovalSuccess,
-  } = useTokenApproval(TRANCHES_ROUTER_ADDRESS)
+    approve: approveUSDC,
+    needsApproval: needsApprovalUSDC,
+    isPending: isApprovingUSDC,
+    isConfirming: isConfirmingUSDC,
+    isSuccess: isSuccessUSDC,
+  } = useTokenApproval(MOCK_USDC_ADDRESS as `0x${string}`)
 
+  // Deposit
   const {
     addLiquidity,
     isPending: isDepositing,
@@ -36,24 +68,25 @@ export function DepositForm({ tranche }: DepositFormProps) {
   } = useAddLiquidity()
 
   useEffect(() => {
-    if (isApprovalSuccess) {
-      toast.success("Token approved!")
-    }
-  }, [isApprovalSuccess])
+    if (isSuccessWETH) toast.success("mWETH approved!")
+  }, [isSuccessWETH])
+
+  useEffect(() => {
+    if (isSuccessUSDC) toast.success("mUSDC approved!")
+  }, [isSuccessUSDC])
 
   useEffect(() => {
     if (isDepositSuccess) {
       toast.success(
         `Deposited into ${tranche === 0 ? "Senior" : "Junior"} tranche!`
       )
-      setAmount("")
+      setWethAmount("")
+      setUsdcAmount("")
     }
   }, [isDepositSuccess, tranche])
 
   useEffect(() => {
-    if (depositError) {
-      toast.error(depositError.message.slice(0, 100))
-    }
+    if (depositError) toast.error(depositError.message.slice(0, 100))
   }, [depositError])
 
   if (!isConnected) {
@@ -64,78 +97,128 @@ export function DepositForm({ tranche }: DepositFormProps) {
     )
   }
 
-  const parsedAmount = amount ? parseEther(amount) : 0n
-  const showApprove = parsedAmount > 0n && needsApproval(parsedAmount)
+  const parsedWETH = wethAmount ? parseEther(wethAmount) : 0n
+  const parsedUSDC = usdcAmount ? parseUnits(usdcAmount, 6) : 0n
+  const hasAmounts = parsedWETH > 0n || parsedUSDC > 0n
+
+  const showApproveWETH = parsedWETH > 0n && needsApprovalWETH(parsedWETH)
+  const showApproveUSDC = parsedUSDC > 0n && needsApprovalUSDC(parsedUSDC)
+  const needsAnyApproval = showApproveWETH || showApproveUSDC
+
   const trancheLabel = tranche === 0 ? "Senior" : "Junior"
 
+  // Use the larger parsed value as liquidity delta (simplified for demo)
+  const liquidityDelta = parsedWETH > parsedUSDC ? parsedWETH : parsedUSDC
+
   const handleDeposit = () => {
-    if (parsedAmount <= 0n) return
-    addLiquidity(parsedAmount, tranche)
+    if (liquidityDelta <= 0n) return
+    addLiquidity(liquidityDelta, tranche)
+  }
+
+  const formatBalance = (bal: bigint | undefined, decimals: number) => {
+    if (!bal) return "0"
+    return (Number(bal) / 10 ** decimals).toFixed(decimals === 6 ? 2 : 4)
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
+      {/* mWETH Input */}
       <div>
-        <label className="mb-2 block text-sm font-medium">
-          Liquidity Amount
-        </label>
-        <Input
-          type="number"
-          placeholder="0.0"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          className="text-lg"
-          min="0"
-          step="0.01"
-        />
-        <p className="mt-1 text-xs text-muted-foreground">
-          Raw liquidity units (full-range position)
-        </p>
+        <div className="mb-2 flex items-center justify-between">
+          <label className="text-sm font-medium">mWETH</label>
+          <span className="text-xs text-muted-foreground">
+            Balance: {formatBalance(wethBalance as bigint, 18)}
+          </span>
+        </div>
+        <div className="flex gap-2">
+          <Input
+            type="number"
+            placeholder="0.0"
+            value={wethAmount}
+            onChange={(e) => setWethAmount(e.target.value)}
+            className="text-lg"
+            min="0"
+            step="0.01"
+          />
+          {showApproveWETH && (
+            <Button
+              onClick={approveWETH}
+              disabled={isApprovingWETH || isConfirmingWETH}
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+            >
+              {isApprovingWETH || isConfirmingWETH ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : isSuccessWETH ? (
+                <CheckCircle2 className="h-4 w-4" />
+              ) : (
+                "Approve"
+              )}
+            </Button>
+          )}
+        </div>
       </div>
 
-      <div className="flex gap-3">
-        {showApprove && (
-          <Button
-            onClick={approve}
-            disabled={isApproving || isApprovalConfirming}
-            variant="outline"
-            className="flex-1"
-          >
-            {isApproving || isApprovalConfirming ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Approving...
-              </>
-            ) : isApprovalSuccess ? (
-              <>
-                <CheckCircle2 className="mr-2 h-4 w-4" />
-                Approved
-              </>
-            ) : (
-              "1. Approve"
-            )}
-          </Button>
-        )}
-        <Button
-          onClick={handleDeposit}
-          disabled={
-            parsedAmount <= 0n ||
-            showApprove ||
-            isDepositing ||
-            isDepositConfirming
-          }
-          className="flex-1"
-        >
-          {isDepositing || isDepositConfirming ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Depositing...
-            </>
-          ) : (
-            `${showApprove ? "2. " : ""}Deposit into ${trancheLabel}`
+      {/* mUSDC Input */}
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <label className="text-sm font-medium">mUSDC</label>
+          <span className="text-xs text-muted-foreground">
+            Balance: {formatBalance(usdcBalance as bigint, 6)}
+          </span>
+        </div>
+        <div className="flex gap-2">
+          <Input
+            type="number"
+            placeholder="0.0"
+            value={usdcAmount}
+            onChange={(e) => setUsdcAmount(e.target.value)}
+            className="text-lg"
+            min="0"
+            step="1"
+          />
+          {showApproveUSDC && (
+            <Button
+              onClick={approveUSDC}
+              disabled={isApprovingUSDC || isConfirmingUSDC}
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+            >
+              {isApprovingUSDC || isConfirmingUSDC ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : isSuccessUSDC ? (
+                <CheckCircle2 className="h-4 w-4" />
+              ) : (
+                "Approve"
+              )}
+            </Button>
           )}
-        </Button>
+        </div>
       </div>
+
+      {/* Deposit Button */}
+      <Button
+        onClick={handleDeposit}
+        disabled={
+          !hasAmounts ||
+          needsAnyApproval ||
+          isDepositing ||
+          isDepositConfirming
+        }
+        className="w-full"
+        size="lg"
+      >
+        {isDepositing || isDepositConfirming ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Depositing...
+          </>
+        ) : (
+          `Deposit into ${trancheLabel}`
+        )}
+      </Button>
     </div>
   )
 }

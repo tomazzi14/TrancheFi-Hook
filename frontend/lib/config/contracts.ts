@@ -11,12 +11,18 @@ export const CALLBACK_RECEIVER_ADDRESS =
 export const POOL_MANAGER_ADDRESS =
   "0x00B036B58a818B1BC34d502D3fE730Db729e62AC" as const
 
-// ─── Pool Key — UPDATE after pool initialization ───
+// ─── Mock Tokens (Unichain Sepolia) ───
+export const MOCK_WETH_ADDRESS =
+  "0x38747E5317bBC519E194faD3a73daA2D2e1cbF9E" as const
+export const MOCK_USDC_ADDRESS =
+  "0xa86dccA9D2A55c08DE7F7c1a9b6D91D31c40fc9A" as const
+
+// ─── Pool Key (mWETH/mUSDC pool, initialized on Unichain Sepolia) ───
 export const POOL_KEY = {
   currency0:
-    "0x0000000000000000000000000000000000000000" as `0x${string}`, // ETH
+    "0x38747E5317bBC519E194faD3a73daA2D2e1cbF9E" as `0x${string}`, // mWETH (sorted lower)
   currency1:
-    "0x0000000000000000000000000000000000000000" as `0x${string}`, // TODO: set token
+    "0xa86dccA9D2A55c08DE7F7c1a9b6D91D31c40fc9A" as `0x${string}`, // mUSDC (sorted higher)
   fee: 3000,
   tickSpacing: 60,
   hooks: TRANCHES_HOOK_ADDRESS as `0x${string}`,
