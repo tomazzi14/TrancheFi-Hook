@@ -3,7 +3,7 @@ import { unichainSepolia } from "./chains"
 
 export const config = getDefaultConfig({
   appName: "TrancheFi",
-  projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "demo",
+  projectId: "73a2755060b5fb20aa3cfb912c07a48f",
   chains: [unichainSepolia],
   ssr: true,
 })
