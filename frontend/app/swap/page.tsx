@@ -242,12 +242,6 @@ export default function SwapPage() {
             </Button>
           </div>
 
-          {SWAP_ROUTER_ADDRESS ===
-            "0x0000000000000000000000000000000000000000" && (
-            <p className="text-center text-xs text-destructive">
-              Swap router not deployed yet. Run DeploySwapRouter.s.sol first.
-            </p>
-          )}
         </CardContent>
       </Card>
     </div>

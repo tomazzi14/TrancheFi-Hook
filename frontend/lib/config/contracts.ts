@@ -4,11 +4,11 @@ import { PoolSwapTestABI } from "../abis/PoolSwapTest"
 
 // ─── Deployed on Unichain Sepolia (Chain ID 1301) ───
 export const TRANCHES_HOOK_ADDRESS =
-  "0x170dbc0d3c29487584475afc7d40c4f513051fc5" as const
+  "0xDB66A15eC7e60c4d5EaA423E54B1802Bc3e19545" as const
 export const TRANCHES_ROUTER_ADDRESS =
-  "0x632880356EeB55DbAd4255351450b5ac7e6CB38B" as const
+  "0x7DaBae9b6EE93a39EC894Ba220f1BEf85Afc3Ef4" as const
 export const CALLBACK_RECEIVER_ADDRESS =
-  "0x9A92277f1B7dF2E51E3195B3eD5d0CFf3702E2DF" as const
+  "0xC85fb1b49e3A40686C8b23c27E50286e40d44222" as const
 export const POOL_MANAGER_ADDRESS =
   "0x00B036B58a818B1BC34d502D3fE730Db729e62AC" as const
 
@@ -46,7 +46,7 @@ export const routerContract = {
 
 // ─── Swap Router (PoolSwapTest) — UPDATE after deployment ───
 export const SWAP_ROUTER_ADDRESS =
-  "0x0000000000000000000000000000000000000000" as const // TODO: deploy with DeploySwapRouter.s.sol
+  "0xEFd491E72D38C7851F2575846Ad309915De21b59" as const
 
 export const swapRouterContract = {
   address: SWAP_ROUTER_ADDRESS,
