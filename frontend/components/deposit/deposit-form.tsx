@@ -8,6 +8,8 @@ import { useTokenApproval } from "@/hooks/useTokenApproval"
 import {
   MOCK_WETH_ADDRESS,
   MOCK_USDC_ADDRESS,
+  DEFAULT_TICK_LOWER,
+  DEFAULT_TICK_UPPER,
 } from "@/lib/config/contracts"
 import { ERC20ABI } from "@/lib/abis/ERC20"
 import { Button } from "@/components/ui/button"
@@ -17,13 +19,11 @@ import { Loader2, CheckCircle2 } from "lucide-react"
 
 interface DepositFormProps {
   tranche: 0 | 1
-  tickLower: number
-  tickUpper: number
 }
 
 const WETH_USDC_RATE = 2000 // 1 mWETH = 2000 mUSDC
 
-export function DepositForm({ tranche, tickLower, tickUpper }: DepositFormProps) {
+export function DepositForm({ tranche }: DepositFormProps) {
   const [wethAmount, setWethAmount] = useState("")
   const [usdcAmount, setUsdcAmount] = useState("")
   const { address, isConnected } = useAccount()
@@ -134,7 +134,7 @@ export function DepositForm({ tranche, tickLower, tickUpper }: DepositFormProps)
 
   const handleDeposit = () => {
     if (liquidityDelta <= 0n) return
-    addLiquidity(liquidityDelta, tranche, tickLower, tickUpper)
+    addLiquidity(liquidityDelta, tranche, DEFAULT_TICK_LOWER, DEFAULT_TICK_UPPER)
   }
 
   const formatBalance = (bal: bigint | undefined, decimals: number) => {
