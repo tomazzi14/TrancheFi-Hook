@@ -140,10 +140,13 @@ contract TranchesRouterTest is Test, Deployers {
     }
 
     function test_seniorRatioCap_viaRouter() public {
-        // Senior-only should revert (ratio > 80%)
+        // Option C: Senior-only succeeds when no Junior exists (cold-start)
         vm.prank(alice);
-        vm.expectRevert();
         tranchesRouter.addLiquidity(poolKey, LIQUIDITY_PARAMS, TranchesHook.Tranche.SENIOR);
+
+        (uint256 totalSenior, uint256 totalJunior,,,,) = hook.getPoolStats(poolKey);
+        assertGt(totalSenior, 0, "Senior deposited via router");
+        assertEq(totalJunior, 0, "No junior yet");
     }
 
     function test_atomicRemoval_autoClaimsFees() public {
