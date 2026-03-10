@@ -5,12 +5,14 @@ import { useAccount, useReadContract } from "wagmi"
 import { parseEther } from "viem"
 import { useAddLiquidity } from "@/hooks/useAddLiquidity"
 import { useTokenApproval } from "@/hooks/useTokenApproval"
+import { usePoolPrice } from "@/hooks/usePoolPrice"
 import {
   MOCK_WETH_ADDRESS,
   MOCK_USDC_ADDRESS,
   DEFAULT_TICK_LOWER,
   DEFAULT_TICK_UPPER,
 } from "@/lib/config/contracts"
+import { amount0ToLiquidity } from "@/lib/utils"
 import { ERC20ABI } from "@/lib/abis/ERC20"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -21,17 +23,19 @@ interface DepositFormProps {
   tranche: 0 | 1
 }
 
-const WETH_USDC_RATE = 2000 // 1 mWETH = 2000 mUSDC
-
 export function DepositForm({ tranche }: DepositFormProps) {
   const [wethAmount, setWethAmount] = useState("")
   const [usdcAmount, setUsdcAmount] = useState("")
   const { address, isConnected } = useAccount()
+  const { price: poolPrice, sqrtPriceX96 } = usePoolPrice()
+
+  // Use live pool price, fallback to 2000
+  const currentRate = poolPrice > 0 ? poolPrice : 2000
 
   const handleWethChange = (val: string) => {
     setWethAmount(val)
     if (val && Number(val) > 0) {
-      setUsdcAmount((Number(val) * WETH_USDC_RATE).toString())
+      setUsdcAmount((Number(val) * currentRate).toFixed(2))
     } else {
       setUsdcAmount("")
     }
@@ -40,7 +44,7 @@ export function DepositForm({ tranche }: DepositFormProps) {
   const handleUsdcChange = (val: string) => {
     setUsdcAmount(val)
     if (val && Number(val) > 0) {
-      setWethAmount((Number(val) / WETH_USDC_RATE).toString())
+      setWethAmount((Number(val) / currentRate).toFixed(6))
     } else {
       setWethAmount("")
     }
@@ -129,8 +133,10 @@ export function DepositForm({ tranche }: DepositFormProps) {
 
   const trancheLabel = tranche === 0 ? "Senior" : "Junior"
 
-  // Use the larger parsed value as liquidity delta (simplified for demo)
-  const liquidityDelta = parsedWETH > parsedUSDC ? parsedWETH : parsedUSDC
+  // Convert mWETH amount → V4 liquidity units using: L = amount0 * sqrtPrice / Q96
+  const liquidityDelta = parsedWETH > 0n && sqrtPriceX96 > 0n
+    ? amount0ToLiquidity(parsedWETH, sqrtPriceX96)
+    : 0n
 
   const handleDeposit = () => {
     if (liquidityDelta <= 0n) return
@@ -187,7 +193,7 @@ export function DepositForm({ tranche }: DepositFormProps) {
       </div>
 
       <p className="text-center text-xs text-muted-foreground">
-        1 mWETH = {WETH_USDC_RATE.toLocaleString()} mUSDC
+        1 mWETH ≈ {currentRate.toFixed(2)} mUSDC
       </p>
 
       {/* mUSDC Input */}

@@ -6,6 +6,7 @@ import { useClaimFees, useWithdrawFees } from "@/hooks/useClaimFees"
 import { useRemoveLiquidity } from "@/hooks/useRemoveLiquidity"
 import { usePoolPrice } from "@/hooks/usePoolPrice"
 import { POOL_KEY } from "@/lib/config/contracts"
+import { liquidityToAmounts, amount0ToLiquidity } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -17,7 +18,7 @@ export function ActionsCard() {
   const { data: position } = useUserPosition()
   const [wethAmount, setWethAmount] = useState("")
   const [usdcAmount, setUsdcAmount] = useState("")
-  const { price } = usePoolPrice()
+  const { price, sqrtPriceX96 } = usePoolPrice()
 
   const {
     claimFees,
@@ -73,8 +74,14 @@ export function ActionsCard() {
   if (!hasPosition) return null
 
   const currentPrice = price > 0 ? price : 2000
-  const maxWeth = Number(liquidityAmount) / 1e18
-  const maxUsdc = maxWeth * currentPrice
+
+  // Convert liquidity units → real token amounts using V4 math
+  const { amount0: maxWethWei, amount1: maxUsdcWei } = liquidityToAmounts(
+    liquidityAmount,
+    sqrtPriceX96
+  )
+  const maxWeth = Number(maxWethWei) / 1e18
+  const maxUsdc = Number(maxUsdcWei) / 1e18
 
   const handleWethChange = (val: string) => {
     setWethAmount(val)
@@ -95,15 +102,18 @@ export function ActionsCard() {
   }
 
   const handleRemove = () => {
-    // Convert mWETH amount to liquidity units
+    // Convert mWETH amount → liquidity units using V4 math
     const wethVal = Number(wethAmount)
     if (!wethVal || wethVal <= 0) return
-    const liquidityToRemove = BigInt(Math.floor(wethVal * 1e18))
-    removeLiquidity(liquidityToRemove)
+    const wethWei = BigInt(Math.floor(wethVal * 1e18))
+    const liquidityToRemove = amount0ToLiquidity(wethWei, sqrtPriceX96)
+    // Cap at position total to avoid over-removal
+    const capped = liquidityToRemove > liquidityAmount ? liquidityAmount : liquidityToRemove
+    removeLiquidity(capped)
   }
 
   const handleMax = () => {
-    setWethAmount(maxWeth.toString())
+    setWethAmount(maxWeth.toFixed(6))
     setUsdcAmount(maxUsdc.toFixed(2))
   }
 

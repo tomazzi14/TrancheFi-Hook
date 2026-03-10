@@ -8,14 +8,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Separator } from "@/components/ui/separator"
-import { formatEth } from "@/lib/utils"
+import { formatEth, liquidityToAmounts } from "@/lib/utils"
 import { Shield, Zap } from "lucide-react"
 
 export function PositionCard() {
   const { data: position, isLoading: posLoading } = useUserPosition()
   const { data: fees, isLoading: feesLoading } = usePendingFees()
   const { data: poolStats } = usePoolStats()
-  const { price: poolPrice } = usePoolPrice()
+  const { price: poolPrice, sqrtPriceX96: posSqrtPrice } = usePoolPrice()
 
   const isLoading = posLoading || feesLoading
 
@@ -43,15 +43,17 @@ export function PositionCard() {
   const liquidityAmount = amount as bigint
 
   // Pool stats: [totalSenior, totalJunior, seniorRatio, targetAPY, volatility]
-  const totalSenior = poolStats ? (poolStats as bigint[])[0] : 0n
-  const totalJunior = poolStats ? (poolStats as bigint[])[1] : 0n
+  const totalSenior = poolStats ? (poolStats as unknown as bigint[])[0] : 0n
+  const totalJunior = poolStats ? (poolStats as unknown as bigint[])[1] : 0n
   const totalLiquidity = totalSenior + totalJunior
 
-  // Estimate token values using current pool price
-  // For full-range liquidity, each unit provides proportional tokens at current price
-  const liquidityEth = Number(liquidityAmount) / 1e18
-  const estimatedMwethNum = liquidityEth
-  const estimatedMusdcNum = liquidityEth * (poolPrice > 0 ? poolPrice : 1)
+  // Convert liquidity units to estimated token amounts using Uniswap V4 math
+  const { amount0: estMwethWei, amount1: estMusdcWei } = liquidityToAmounts(
+    liquidityAmount,
+    posSqrtPrice
+  )
+  const estimatedMwethNum = Number(estMwethWei) / 1e18
+  const estimatedMusdcNum = Number(estMusdcWei) / 1e18
 
   if (!hasPosition) {
     return (
