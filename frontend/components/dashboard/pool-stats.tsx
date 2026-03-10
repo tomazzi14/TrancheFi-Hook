@@ -1,13 +1,15 @@
 "use client"
 
 import { usePoolStats } from "@/hooks/usePoolStats"
+import { usePoolPrice } from "@/hooks/usePoolPrice"
 import { formatEth, formatBps } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
-import { TrendingUp, Layers, PieChart, Shield } from "lucide-react"
+import { TrendingUp, Layers, PieChart, Shield, DollarSign } from "lucide-react"
 
 export function PoolStats() {
   const { data, isLoading, error } = usePoolStats()
+  const { price: poolPrice } = usePoolPrice()
 
   if (error) {
     return (
@@ -24,6 +26,12 @@ export function PoolStats() {
   const totalLiquidity = (totalSenior as bigint) + (totalJunior as bigint)
 
   const stats = [
+    {
+      title: "ETH/USDC Price",
+      value: isLoading ? null : `${poolPrice > 0 ? poolPrice.toFixed(2) : "—"}`,
+      subtitle: "Current pool price",
+      icon: DollarSign,
+    },
     {
       title: "Total Liquidity",
       value: isLoading ? null : formatEth(totalLiquidity),
@@ -53,7 +61,7 @@ export function PoolStats() {
   ]
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
       {stats.map((stat) => (
         <Card key={stat.title}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">

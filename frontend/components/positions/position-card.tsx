@@ -3,6 +3,7 @@
 import { useUserPosition } from "@/hooks/useUserPosition"
 import { usePendingFees } from "@/hooks/usePendingFees"
 import { usePoolStats } from "@/hooks/usePoolStats"
+import { usePoolPrice } from "@/hooks/usePoolPrice"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -14,6 +15,7 @@ export function PositionCard() {
   const { data: position, isLoading: posLoading } = useUserPosition()
   const { data: fees, isLoading: feesLoading } = usePendingFees()
   const { data: poolStats } = usePoolStats()
+  const { price: poolPrice } = usePoolPrice()
 
   const isLoading = posLoading || feesLoading
 
@@ -45,9 +47,11 @@ export function PositionCard() {
   const totalJunior = poolStats ? (poolStats as bigint[])[1] : 0n
   const totalLiquidity = totalSenior + totalJunior
 
-  // At 1:1 sqrtPrice with full range, each unit of liquidity ≈ equal amounts of both tokens
-  const estimatedMweth = liquidityAmount
-  const estimatedMusdc = liquidityAmount
+  // Estimate token values using current pool price
+  // For full-range liquidity, each unit provides proportional tokens at current price
+  const liquidityEth = Number(liquidityAmount) / 1e18
+  const estimatedMwethNum = liquidityEth
+  const estimatedMusdcNum = liquidityEth * (poolPrice > 0 ? poolPrice : 1)
 
   if (!hasPosition) {
     return (
@@ -94,11 +98,11 @@ export function PositionCard() {
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-lg bg-muted/50 p-3">
               <p className="text-xs text-muted-foreground">mWETH</p>
-              <p className="text-lg font-semibold">{formatEth(estimatedMweth)}</p>
+              <p className="text-lg font-semibold">{estimatedMwethNum.toFixed(4)}</p>
             </div>
             <div className="rounded-lg bg-muted/50 p-3">
               <p className="text-xs text-muted-foreground">mUSDC</p>
-              <p className="text-lg font-semibold">{formatEth(estimatedMusdc)}</p>
+              <p className="text-lg font-semibold">{estimatedMusdcNum.toFixed(2)}</p>
             </div>
           </div>
         </div>

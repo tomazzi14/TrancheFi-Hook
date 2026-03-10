@@ -4,7 +4,9 @@ import { useState, useEffect } from "react"
 import { useUserPosition } from "@/hooks/useUserPosition"
 import { useClaimFees, useWithdrawFees } from "@/hooks/useClaimFees"
 import { useRemoveLiquidity } from "@/hooks/useRemoveLiquidity"
+import { usePoolPrice } from "@/hooks/usePoolPrice"
 import { POOL_KEY } from "@/lib/config/contracts"
+import { formatEth } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,6 +17,7 @@ import { Loader2, Coins, LogOut } from "lucide-react"
 export function ActionsCard() {
   const { data: position } = useUserPosition()
   const [removeAmount, setRemoveAmount] = useState("")
+  const { price } = usePoolPrice()
 
   const {
     claimFees,
@@ -63,7 +66,8 @@ export function ActionsCard() {
   }, [removeError])
 
   const [, amount] = position ?? [0, 0n, 0n, 0n, 0n]
-  const hasPosition = (amount as bigint) > 0n
+  const liquidityAmount = amount as bigint
+  const hasPosition = liquidityAmount > 0n
 
   if (!hasPosition) return null
 
@@ -72,6 +76,24 @@ export function ActionsCard() {
     if (val <= 0n) return
     removeLiquidity(val)
   }
+
+  const handleMax = () => {
+    const ethValue = Number(liquidityAmount) / 1e18
+    setRemoveAmount(ethValue.toString())
+  }
+
+  // Estimate how much mWETH/mUSDC user gets back for removeAmount
+  const removeVal =
+    removeAmount && Number(removeAmount) > 0 ? Number(removeAmount) : 0
+  const liquidityNum = Number(liquidityAmount) / 1e18
+  const removeFraction =
+    liquidityNum > 0 ? removeVal / liquidityNum : 0
+
+  // With full-range liquidity at current price, approximate token amounts
+  // Using the relationship: L = sqrt(x * y * price), the amounts are roughly:
+  // For full-range, each unit of liquidity provides ~proportional tokens
+  const estMweth = removeVal > 0 ? removeVal : 0
+  const estMusdc = removeVal > 0 && price > 0 ? removeVal * price : 0
 
   return (
     <Card>
@@ -110,7 +132,7 @@ export function ActionsCard() {
               {isWithdrawing || isWithdrawConfirming ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : null}
-              2. Withdraw T0
+              2. Withdraw mWETH
             </Button>
             <Button
               onClick={() =>
@@ -123,7 +145,7 @@ export function ActionsCard() {
               {isWithdrawing || isWithdrawConfirming ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : null}
-              3. Withdraw T1
+              3. Withdraw mUSDC
             </Button>
           </div>
         </div>
@@ -133,14 +155,24 @@ export function ActionsCard() {
         <div>
           <h3 className="mb-2 text-sm font-medium">Remove Liquidity</h3>
           <div className="flex gap-3">
-            <Input
-              type="number"
-              placeholder="Amount to remove"
-              value={removeAmount}
-              onChange={(e) => setRemoveAmount(e.target.value)}
-              min="0"
-              step="0.01"
-            />
+            <div className="flex flex-1 gap-2">
+              <Input
+                type="number"
+                placeholder="Amount to remove"
+                value={removeAmount}
+                onChange={(e) => setRemoveAmount(e.target.value)}
+                min="0"
+                step="0.01"
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleMax}
+                className="shrink-0"
+              >
+                Max
+              </Button>
+            </div>
             <Button
               onClick={handleRemove}
               disabled={
@@ -159,6 +191,23 @@ export function ActionsCard() {
               Remove
             </Button>
           </div>
+          {removeVal > 0 && (
+            <div className="mt-3 rounded-lg bg-muted/50 p-3">
+              <p className="text-xs text-muted-foreground mb-2">
+                Estimated tokens you receive ({(removeFraction * 100).toFixed(1)}% of position)
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-xs text-muted-foreground">mWETH</p>
+                  <p className="text-sm font-semibold">~{estMweth.toFixed(4)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">mUSDC</p>
+                  <p className="text-sm font-semibold">~{estMusdc.toFixed(2)}</p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

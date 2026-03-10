@@ -6,6 +6,7 @@ import { parseEther } from "viem"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { useSwap } from "@/hooks/useSwap"
 import { useTokenApproval } from "@/hooks/useTokenApproval"
+import { usePoolPrice } from "@/hooks/usePoolPrice"
 import {
   MOCK_WETH_ADDRESS,
   MOCK_USDC_ADDRESS,
@@ -18,25 +19,25 @@ import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
 import { ArrowDownUp, Loader2 } from "lucide-react"
 
-const WETH_USDC_RATE = 2000
-
 export default function SwapPage() {
   const { address, isConnected } = useAccount()
   const [direction, setDirection] = useState<"wethToUsdc" | "usdcToWeth">(
     "wethToUsdc"
   )
   const [inputAmount, setInputAmount] = useState("")
+  const { price: poolPrice } = usePoolPrice()
 
+  const currentRate = poolPrice > 0 ? poolPrice : 2000
   const isWethInput = direction === "wethToUsdc"
   const inputToken = isWethInput ? "mWETH" : "mUSDC"
   const outputToken = isWethInput ? "mUSDC" : "mWETH"
   const inputDecimals = 18 // Both MockERC20 tokens use 18 decimals
 
-  // Estimated output (simple rate, real output depends on pool liquidity)
+  // Estimated output based on current pool price
   const estimatedOutput = inputAmount
     ? isWethInput
-      ? (Number(inputAmount) * WETH_USDC_RATE).toFixed(2)
-      : (Number(inputAmount) / WETH_USDC_RATE).toFixed(6)
+      ? (Number(inputAmount) * currentRate).toFixed(2)
+      : (Number(inputAmount) / currentRate).toFixed(6)
     : "0"
 
   // Balances
@@ -202,7 +203,7 @@ export default function SwapPage() {
               </span>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Rate: 1 mWETH ≈ {WETH_USDC_RATE.toLocaleString()} mUSDC
+              Pool rate: 1 mWETH ≈ {currentRate.toFixed(2)} mUSDC
             </p>
           </div>
 
