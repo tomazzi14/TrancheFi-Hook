@@ -19,7 +19,11 @@ contract TrancheFiVolatilityRSCTest is Test {
 
     function setUp() public {
         // Deploy RSC — constructor detects vm=true (no system contract), skips subscribe()
-        rsc = new TrancheFiVolatilityRSC(UNICHAIN_ID, callbackReceiver, MONITORED_CHAIN, POOL_MANAGER);
+        uint256[] memory chainIds = new uint256[](1);
+        chainIds[0] = MONITORED_CHAIN;
+        address[] memory poolManagers = new address[](1);
+        poolManagers[0] = POOL_MANAGER;
+        rsc = new TrancheFiVolatilityRSC(UNICHAIN_ID, callbackReceiver, chainIds, poolManagers);
     }
 
     // ============ Helpers ============
@@ -239,6 +243,40 @@ contract TrancheFiVolatilityRSCTest is Test {
         rsc.react(_makeSwapLog(0));
         assertEq(rsc.lastSqrtPriceX96(), 0, "Zero price ignored");
         assertEq(rsc.observationCount(), 0, "No observation");
+    }
+
+    function test_multiChainConstructor() public {
+        // Deploy with 3 chains (mimicking Eth Sepolia + Base Sepolia + Unichain Sepolia)
+        uint256[] memory chainIds = new uint256[](3);
+        chainIds[0] = 11155111; // Ethereum Sepolia
+        chainIds[1] = 84532; // Base Sepolia
+        chainIds[2] = 1301; // Unichain Sepolia
+        address[] memory poolManagers = new address[](3);
+        poolManagers[0] = address(0x1111);
+        poolManagers[1] = address(0x2222);
+        poolManagers[2] = address(0x3333);
+
+        // Should deploy without reverting (vm=true skips subscribe)
+        TrancheFiVolatilityRSC multiRsc = new TrancheFiVolatilityRSC(1301, callbackReceiver, chainIds, poolManagers);
+        assertEq(multiRsc.destinationChainId(), 1301);
+        assertEq(multiRsc.callbackReceiver(), callbackReceiver);
+    }
+
+    function test_constructorRevertsEmptyChains() public {
+        uint256[] memory chainIds = new uint256[](0);
+        address[] memory poolManagers = new address[](0);
+        vm.expectRevert("No chains to monitor");
+        new TrancheFiVolatilityRSC(1301, callbackReceiver, chainIds, poolManagers);
+    }
+
+    function test_constructorRevertsMismatchedArrays() public {
+        uint256[] memory chainIds = new uint256[](2);
+        chainIds[0] = 1;
+        chainIds[1] = 2;
+        address[] memory poolManagers = new address[](1);
+        poolManagers[0] = address(0x1111);
+        vm.expectRevert("Array length mismatch");
+        new TrancheFiVolatilityRSC(1301, callbackReceiver, chainIds, poolManagers);
     }
 
     function test_sqrtPriceOverflowSafety() public {

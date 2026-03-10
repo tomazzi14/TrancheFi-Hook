@@ -4,13 +4,14 @@ pragma solidity ^0.8.26;
 import {AbstractReactive} from "reactive-lib/abstract-base/AbstractReactive.sol";
 import {IReactive} from "reactive-lib/interfaces/IReactive.sol";
 
-/// @title TrancheFi Volatility RSC — Cross-Chain Volatility Monitor
-/// @notice Deployed on Reactive Network. Subscribes to Uniswap V4 Swap events,
-///         tracks sqrtPriceX96, computes realized volatility via EMA of squared
-///         log-returns, and emits Callbacks to adjust TranchesHook risk parameters
-///         when the volatility regime changes.
+/// @title TrancheFi Volatility RSC — Multi-Chain Volatility Monitor
+/// @notice Deployed on Reactive Network. Subscribes to Uniswap V4 Swap events
+///         across multiple chains (Ethereum, Base, Unichain), tracks sqrtPriceX96,
+///         computes realized volatility via EMA of squared log-returns, and emits
+///         Callbacks to adjust TranchesHook risk parameters when the volatility
+///         regime changes — BEFORE the volatility propagates to Unichain.
 /// @dev Uses Reactive Network's event subscription system to monitor swaps
-///      across one or more chains. The callback adjusts seniorTargetAPY:
+///      across multiple origin chains simultaneously. The callback adjusts seniorTargetAPY:
 ///        - Low volatility  → 300 bps (3%)  — Senior gets less premium
 ///        - Medium volatility → 500 bps (5%) — Default
 ///        - High volatility → 1000 bps (10%) — Senior gets more for higher risk
@@ -76,31 +77,36 @@ contract TrancheFiVolatilityRSC is AbstractReactive {
 
     // ============ Constructor ============
 
-    /// @param _destinationChainId Chain ID where TranchesHook lives (130 for Unichain)
+    /// @param _destinationChainId Chain ID where TranchesHook lives (1301 for Unichain Sepolia)
     /// @param _callbackReceiver TrancheFiCallbackReceiver address on destination chain
-    /// @param _monitoredChainId Chain ID to monitor swaps on (can differ from destination)
-    /// @param _poolManager PoolManager address on the monitored chain (or address(0) for all)
+    /// @param _chainIds Array of chain IDs to monitor for Swap events
+    /// @param _poolManagers Corresponding PoolManager addresses (or address(0) for any contract)
     constructor(
         uint256 _destinationChainId,
         address _callbackReceiver,
-        uint256 _monitoredChainId,
-        address _poolManager
+        uint256[] memory _chainIds,
+        address[] memory _poolManagers
     ) {
+        require(_chainIds.length == _poolManagers.length, "Array length mismatch");
+        require(_chainIds.length > 0, "No chains to monitor");
+
         destinationChainId = _destinationChainId;
         callbackReceiver = _callbackReceiver;
         currentRegime = VolatilityRegime.MEDIUM;
 
-        // Subscribe to Swap events on the monitored chain
+        // Subscribe to Swap events on ALL monitored chains
         // Only on Reactive Network (not in test VM)
         if (!vm) {
-            service.subscribe(
-                _monitoredChainId,
-                _poolManager,
-                SWAP_EVENT_TOPIC0,
-                REACTIVE_IGNORE, // any pool ID
-                REACTIVE_IGNORE, // any sender
-                REACTIVE_IGNORE // unused topic3
-            );
+            for (uint256 i = 0; i < _chainIds.length; i++) {
+                service.subscribe(
+                    _chainIds[i],
+                    _poolManagers[i],
+                    SWAP_EVENT_TOPIC0,
+                    REACTIVE_IGNORE, // any pool ID
+                    REACTIVE_IGNORE, // any sender
+                    REACTIVE_IGNORE // unused topic3
+                );
+            }
         }
     }
 
