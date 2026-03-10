@@ -8,15 +8,15 @@ import { usePoolPrice } from "@/hooks/usePoolPrice"
 import { POOL_KEY } from "@/lib/config/contracts"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { toast } from "sonner"
 import { Loader2, Coins, LogOut } from "lucide-react"
 
-const PERCENT_OPTIONS = [25, 50, 75, 100] as const
-
 export function ActionsCard() {
   const { data: position } = useUserPosition()
-  const [removePercent, setRemovePercent] = useState<number>(0)
+  const [wethAmount, setWethAmount] = useState("")
+  const [usdcAmount, setUsdcAmount] = useState("")
   const { price } = usePoolPrice()
 
   const {
@@ -53,7 +53,8 @@ export function ActionsCard() {
   useEffect(() => {
     if (removeSuccess) {
       toast.success("Liquidity removed!")
-      setRemovePercent(0)
+      setWethAmount("")
+      setUsdcAmount("")
     }
   }, [removeSuccess])
 
@@ -71,23 +72,42 @@ export function ActionsCard() {
 
   if (!hasPosition) return null
 
-  // Calculate removal amounts
-  const liquidityToRemove =
-    removePercent > 0
-      ? (liquidityAmount * BigInt(removePercent)) / 100n
-      : 0n
-
-  const liquidityNum = Number(liquidityToRemove) / 1e18
   const currentPrice = price > 0 ? price : 2000
+  const maxWeth = Number(liquidityAmount) / 1e18
+  const maxUsdc = maxWeth * currentPrice
 
-  // Estimated tokens user receives (full-range proportional)
-  const estMweth = liquidityNum
-  const estMusdc = liquidityNum * currentPrice
+  const handleWethChange = (val: string) => {
+    setWethAmount(val)
+    if (val && Number(val) > 0) {
+      setUsdcAmount((Number(val) * currentPrice).toFixed(2))
+    } else {
+      setUsdcAmount("")
+    }
+  }
+
+  const handleUsdcChange = (val: string) => {
+    setUsdcAmount(val)
+    if (val && Number(val) > 0) {
+      setWethAmount((Number(val) / currentPrice).toFixed(6))
+    } else {
+      setWethAmount("")
+    }
+  }
 
   const handleRemove = () => {
-    if (liquidityToRemove <= 0n) return
+    // Convert mWETH amount to liquidity units
+    const wethVal = Number(wethAmount)
+    if (!wethVal || wethVal <= 0) return
+    const liquidityToRemove = BigInt(Math.floor(wethVal * 1e18))
     removeLiquidity(liquidityToRemove)
   }
+
+  const handleMax = () => {
+    setWethAmount(maxWeth.toString())
+    setUsdcAmount(maxUsdc.toFixed(2))
+  }
+
+  const hasAmount = wethAmount && Number(wethAmount) > 0
 
   return (
     <Card>
@@ -147,58 +167,56 @@ export function ActionsCard() {
         <Separator />
 
         <div>
-          <h3 className="mb-3 text-sm font-medium">Remove Liquidity</h3>
-
-          {/* Percentage selector */}
-          <div className="flex gap-2 mb-4">
-            {PERCENT_OPTIONS.map((pct) => (
-              <Button
-                key={pct}
-                variant={removePercent === pct ? "default" : "outline"}
-                size="sm"
-                className="flex-1"
-                onClick={() =>
-                  setRemovePercent(removePercent === pct ? 0 : pct)
-                }
-              >
-                {pct === 100 ? "Max" : `${pct}%`}
-              </Button>
-            ))}
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-medium">Remove Liquidity</h3>
+            <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={handleMax}>
+              Max
+            </Button>
           </div>
 
-          {/* Estimated output */}
-          {removePercent > 0 && (
-            <div className="mb-4 rounded-lg bg-muted/50 p-4">
-              <p className="text-xs text-muted-foreground mb-3">
-                Removing {removePercent}% of your position
-              </p>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="rounded-lg border bg-background p-3">
-                  <p className="text-xs text-muted-foreground mb-1">
-                    You receive
-                  </p>
-                  <p className="text-lg font-bold">{estMweth.toFixed(4)}</p>
-                  <p className="text-xs text-muted-foreground">mWETH</p>
-                </div>
-                <div className="rounded-lg border bg-background p-3">
-                  <p className="text-xs text-muted-foreground mb-1">
-                    You receive
-                  </p>
-                  <p className="text-lg font-bold">
-                    {estMusdc.toFixed(2)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">mUSDC</p>
-                </div>
-              </div>
+          {/* mWETH input */}
+          <div className="mb-3">
+            <div className="mb-1 flex items-center justify-between">
+              <label className="text-xs text-muted-foreground">mWETH</label>
+              <span className="text-xs text-muted-foreground">
+                Max: {maxWeth.toFixed(4)}
+              </span>
             </div>
-          )}
+            <Input
+              type="number"
+              placeholder="0.0"
+              value={wethAmount}
+              onChange={(e) => handleWethChange(e.target.value)}
+              min="0"
+              step="0.01"
+            />
+          </div>
 
-          {/* Remove button */}
+          {/* mUSDC input */}
+          <div className="mb-4">
+            <div className="mb-1 flex items-center justify-between">
+              <label className="text-xs text-muted-foreground">mUSDC</label>
+              <span className="text-xs text-muted-foreground">
+                Max: {maxUsdc.toFixed(2)}
+              </span>
+            </div>
+            <Input
+              type="number"
+              placeholder="0.0"
+              value={usdcAmount}
+              onChange={(e) => handleUsdcChange(e.target.value)}
+              min="0"
+              step="1"
+            />
+          </div>
+
+          <p className="mb-3 text-center text-xs text-muted-foreground">
+            1 mWETH = {currentPrice.toFixed(2)} mUSDC
+          </p>
+
           <Button
             onClick={handleRemove}
-            disabled={
-              removePercent === 0 || isRemoving || isRemoveConfirming
-            }
+            disabled={!hasAmount || isRemoving || isRemoveConfirming}
             variant="destructive"
             className="w-full"
             size="lg"
@@ -211,9 +229,7 @@ export function ActionsCard() {
             ) : (
               <>
                 <LogOut className="mr-2 h-4 w-4" />
-                {removePercent > 0
-                  ? `Remove ${removePercent}%`
-                  : "Select amount to remove"}
+                Remove Liquidity
               </>
             )}
           </Button>
