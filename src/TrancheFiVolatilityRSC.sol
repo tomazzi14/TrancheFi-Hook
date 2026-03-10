@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import {AbstractReactive} from "reactive-lib/abstract-base/AbstractReactive.sol";
 import {IReactive} from "reactive-lib/interfaces/IReactive.sol";
+import {ISystemContract} from "reactive-lib/interfaces/ISystemContract.sol";
 
 /// @title TrancheFi Volatility RSC — Multi-Chain Volatility Monitor
 /// @notice Deployed on Reactive Network. Subscribes to Uniswap V4 Swap events
@@ -77,16 +78,19 @@ contract TrancheFiVolatilityRSC is AbstractReactive {
 
     // ============ Constructor ============
 
+    /// @param _service Reactive Network system contract address (0x0000000000000000000000000000000000fffFfF)
     /// @param _destinationChainId Chain ID where TranchesHook lives (1301 for Unichain Sepolia)
     /// @param _callbackReceiver TrancheFiCallbackReceiver address on destination chain
     /// @param _chainIds Array of chain IDs to monitor for Swap events
     /// @param _poolManagers Corresponding PoolManager addresses (or address(0) for any contract)
     constructor(
+        address _service,
         uint256 _destinationChainId,
         address _callbackReceiver,
         uint256[] memory _chainIds,
         address[] memory _poolManagers
-    ) {
+    ) payable {
+        service = ISystemContract(payable(_service));
         require(_chainIds.length == _poolManagers.length, "Array length mismatch");
         require(_chainIds.length > 0, "No chains to monitor");
 

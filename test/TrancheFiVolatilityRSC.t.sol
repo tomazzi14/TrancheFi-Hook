@@ -23,7 +23,7 @@ contract TrancheFiVolatilityRSCTest is Test {
         chainIds[0] = MONITORED_CHAIN;
         address[] memory poolManagers = new address[](1);
         poolManagers[0] = POOL_MANAGER;
-        rsc = new TrancheFiVolatilityRSC(UNICHAIN_ID, callbackReceiver, chainIds, poolManagers);
+        rsc = new TrancheFiVolatilityRSC(address(0), UNICHAIN_ID, callbackReceiver, chainIds, poolManagers);
     }
 
     // ============ Helpers ============
@@ -257,7 +257,8 @@ contract TrancheFiVolatilityRSCTest is Test {
         poolManagers[2] = address(0x3333);
 
         // Should deploy without reverting (vm=true skips subscribe)
-        TrancheFiVolatilityRSC multiRsc = new TrancheFiVolatilityRSC(1301, callbackReceiver, chainIds, poolManagers);
+        TrancheFiVolatilityRSC multiRsc =
+            new TrancheFiVolatilityRSC(address(0), 1301, callbackReceiver, chainIds, poolManagers);
         assertEq(multiRsc.destinationChainId(), 1301);
         assertEq(multiRsc.callbackReceiver(), callbackReceiver);
     }
@@ -266,7 +267,7 @@ contract TrancheFiVolatilityRSCTest is Test {
         uint256[] memory chainIds = new uint256[](0);
         address[] memory poolManagers = new address[](0);
         vm.expectRevert("No chains to monitor");
-        new TrancheFiVolatilityRSC(1301, callbackReceiver, chainIds, poolManagers);
+        new TrancheFiVolatilityRSC(address(0), 1301, callbackReceiver, chainIds, poolManagers);
     }
 
     function test_constructorRevertsMismatchedArrays() public {
@@ -276,7 +277,7 @@ contract TrancheFiVolatilityRSCTest is Test {
         address[] memory poolManagers = new address[](1);
         poolManagers[0] = address(0x1111);
         vm.expectRevert("Array length mismatch");
-        new TrancheFiVolatilityRSC(1301, callbackReceiver, chainIds, poolManagers);
+        new TrancheFiVolatilityRSC(address(0), 1301, callbackReceiver, chainIds, poolManagers);
     }
 
     function test_sqrtPriceOverflowSafety() public {
