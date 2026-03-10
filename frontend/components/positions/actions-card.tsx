@@ -6,17 +6,17 @@ import { useClaimFees, useWithdrawFees } from "@/hooks/useClaimFees"
 import { useRemoveLiquidity } from "@/hooks/useRemoveLiquidity"
 import { usePoolPrice } from "@/hooks/usePoolPrice"
 import { POOL_KEY } from "@/lib/config/contracts"
-import { formatEth } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { toast } from "sonner"
 import { Loader2, Coins, LogOut } from "lucide-react"
 
+const PERCENT_OPTIONS = [25, 50, 75, 100] as const
+
 export function ActionsCard() {
   const { data: position } = useUserPosition()
-  const [removeAmount, setRemoveAmount] = useState("")
+  const [removePercent, setRemovePercent] = useState<number>(0)
   const { price } = usePoolPrice()
 
   const {
@@ -53,7 +53,7 @@ export function ActionsCard() {
   useEffect(() => {
     if (removeSuccess) {
       toast.success("Liquidity removed!")
-      setRemoveAmount("")
+      setRemovePercent(0)
     }
   }, [removeSuccess])
 
@@ -71,29 +71,23 @@ export function ActionsCard() {
 
   if (!hasPosition) return null
 
+  // Calculate removal amounts
+  const liquidityToRemove =
+    removePercent > 0
+      ? (liquidityAmount * BigInt(removePercent)) / 100n
+      : 0n
+
+  const liquidityNum = Number(liquidityToRemove) / 1e18
+  const currentPrice = price > 0 ? price : 2000
+
+  // Estimated tokens user receives (full-range proportional)
+  const estMweth = liquidityNum
+  const estMusdc = liquidityNum * currentPrice
+
   const handleRemove = () => {
-    const val = BigInt(Math.floor(Number(removeAmount) * 1e18))
-    if (val <= 0n) return
-    removeLiquidity(val)
+    if (liquidityToRemove <= 0n) return
+    removeLiquidity(liquidityToRemove)
   }
-
-  const handleMax = () => {
-    const ethValue = Number(liquidityAmount) / 1e18
-    setRemoveAmount(ethValue.toString())
-  }
-
-  // Estimate how much mWETH/mUSDC user gets back for removeAmount
-  const removeVal =
-    removeAmount && Number(removeAmount) > 0 ? Number(removeAmount) : 0
-  const liquidityNum = Number(liquidityAmount) / 1e18
-  const removeFraction =
-    liquidityNum > 0 ? removeVal / liquidityNum : 0
-
-  // With full-range liquidity at current price, approximate token amounts
-  // Using the relationship: L = sqrt(x * y * price), the amounts are roughly:
-  // For full-range, each unit of liquidity provides ~proportional tokens
-  const estMweth = removeVal > 0 ? removeVal : 0
-  const estMusdc = removeVal > 0 && price > 0 ? removeVal * price : 0
 
   return (
     <Card>
@@ -153,61 +147,76 @@ export function ActionsCard() {
         <Separator />
 
         <div>
-          <h3 className="mb-2 text-sm font-medium">Remove Liquidity</h3>
-          <div className="flex gap-3">
-            <div className="flex flex-1 gap-2">
-              <Input
-                type="number"
-                placeholder="Amount to remove"
-                value={removeAmount}
-                onChange={(e) => setRemoveAmount(e.target.value)}
-                min="0"
-                step="0.01"
-              />
+          <h3 className="mb-3 text-sm font-medium">Remove Liquidity</h3>
+
+          {/* Percentage selector */}
+          <div className="flex gap-2 mb-4">
+            {PERCENT_OPTIONS.map((pct) => (
               <Button
-                variant="secondary"
+                key={pct}
+                variant={removePercent === pct ? "default" : "outline"}
                 size="sm"
-                onClick={handleMax}
-                className="shrink-0"
+                className="flex-1"
+                onClick={() =>
+                  setRemovePercent(removePercent === pct ? 0 : pct)
+                }
               >
-                Max
+                {pct === 100 ? "Max" : `${pct}%`}
               </Button>
-            </div>
-            <Button
-              onClick={handleRemove}
-              disabled={
-                !removeAmount ||
-                Number(removeAmount) <= 0 ||
-                isRemoving ||
-                isRemoveConfirming
-              }
-              variant="destructive"
-            >
-              {isRemoving || isRemoveConfirming ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <LogOut className="mr-2 h-4 w-4" />
-              )}
-              Remove
-            </Button>
+            ))}
           </div>
-          {removeVal > 0 && (
-            <div className="mt-3 rounded-lg bg-muted/50 p-3">
-              <p className="text-xs text-muted-foreground mb-2">
-                Estimated tokens you receive ({(removeFraction * 100).toFixed(1)}% of position)
+
+          {/* Estimated output */}
+          {removePercent > 0 && (
+            <div className="mb-4 rounded-lg bg-muted/50 p-4">
+              <p className="text-xs text-muted-foreground mb-3">
+                Removing {removePercent}% of your position
               </p>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="rounded-lg border bg-background p-3">
+                  <p className="text-xs text-muted-foreground mb-1">
+                    You receive
+                  </p>
+                  <p className="text-lg font-bold">{estMweth.toFixed(4)}</p>
                   <p className="text-xs text-muted-foreground">mWETH</p>
-                  <p className="text-sm font-semibold">~{estMweth.toFixed(4)}</p>
                 </div>
-                <div>
+                <div className="rounded-lg border bg-background p-3">
+                  <p className="text-xs text-muted-foreground mb-1">
+                    You receive
+                  </p>
+                  <p className="text-lg font-bold">
+                    {estMusdc.toFixed(2)}
+                  </p>
                   <p className="text-xs text-muted-foreground">mUSDC</p>
-                  <p className="text-sm font-semibold">~{estMusdc.toFixed(2)}</p>
                 </div>
               </div>
             </div>
           )}
+
+          {/* Remove button */}
+          <Button
+            onClick={handleRemove}
+            disabled={
+              removePercent === 0 || isRemoving || isRemoveConfirming
+            }
+            variant="destructive"
+            className="w-full"
+            size="lg"
+          >
+            {isRemoving || isRemoveConfirming ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Removing...
+              </>
+            ) : (
+              <>
+                <LogOut className="mr-2 h-4 w-4" />
+                {removePercent > 0
+                  ? `Remove ${removePercent}%`
+                  : "Select amount to remove"}
+              </>
+            )}
+          </Button>
         </div>
       </CardContent>
     </Card>
