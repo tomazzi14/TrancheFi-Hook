@@ -5,14 +5,18 @@ import {AbstractReactive} from "reactive-lib/abstract-base/AbstractReactive.sol"
 import {IReactive} from "reactive-lib/interfaces/IReactive.sol";
 import {ISystemContract} from "reactive-lib/interfaces/ISystemContract.sol";
 
-/// @title TrancheFi Volatility RSC — Multi-Chain Volatility Monitor
+/// @title TrancheFi Volatility RSC — Cross-Chain Weighted-Price Volatility Monitor
 /// @notice Deployed on Reactive Network. Subscribes to Uniswap V4 Swap events
-///         across multiple chains (Ethereum, Base, Unichain), tracks sqrtPriceX96,
-///         computes realized volatility via EMA of squared log-returns, and emits
-///         Callbacks to adjust TranchesHook risk parameters when the volatility
-///         regime changes — BEFORE the volatility propagates to Unichain.
+///         across multiple chains (Ethereum, Base, Unichain), maintains per-chain
+///         sqrtPriceX96, computes an equal-weighted average price across all active
+///         chains, and tracks realized volatility via EMA of squared log-returns on
+///         the composite price. Emits Callbacks to adjust TranchesHook risk parameters
+///         when the volatility regime changes — BEFORE the volatility propagates to Unichain.
 /// @dev Uses Reactive Network's event subscription system to monitor swaps
-///      across multiple origin chains simultaneously. The callback adjusts seniorTargetAPY:
+///      across multiple origin chains simultaneously. The weighted-price approach
+///      acts as an implicit cross-chain oracle: noise on a single chain is dampened,
+///      but correlated moves across all chains are captured immediately.
+///      The callback adjusts seniorTargetAPY:
 ///        - Low volatility  → 300 bps (3%)  — Senior gets less premium
 ///        - Medium volatility → 500 bps (5%) — Default
 ///        - High volatility → 1000 bps (10%) — Senior gets more for higher risk
@@ -59,8 +63,14 @@ contract TrancheFiVolatilityRSC is AbstractReactive {
     /// @notice The callback receiver contract address on the destination chain
     address public immutable callbackReceiver;
 
-    /// @notice Last observed sqrtPriceX96 (for computing returns)
-    uint256 public lastSqrtPriceX96;
+    /// @notice Chain IDs being monitored (stored for weighted-price iteration)
+    uint256[] public monitoredChainIds;
+
+    /// @notice Latest sqrtPriceX96 observed per chain
+    mapping(uint256 => uint256) public chainPrices;
+
+    /// @notice Last computed equal-weighted average sqrtPriceX96 across all active chains
+    uint256 public lastWeightedPrice;
 
     /// @notice EMA of squared log-returns (scaled by 1e18)
     uint256 public volatilityEMA;
@@ -73,7 +83,7 @@ contract TrancheFiVolatilityRSC is AbstractReactive {
 
     // ============ Events ============
 
-    event SwapObserved(uint256 indexed chainId, uint256 sqrtPriceX96, uint256 squaredReturn);
+    event SwapObserved(uint256 indexed chainId, uint256 sqrtPriceX96, uint256 weightedPrice, uint256 squaredReturn);
     event VolatilityRegimeChanged(VolatilityRegime oldRegime, VolatilityRegime newRegime, uint256 newAPY);
 
     // ============ Constructor ============
@@ -97,6 +107,11 @@ contract TrancheFiVolatilityRSC is AbstractReactive {
         destinationChainId = _destinationChainId;
         callbackReceiver = _callbackReceiver;
         currentRegime = VolatilityRegime.MEDIUM;
+
+        // Store chain IDs for weighted-price iteration
+        for (uint256 i = 0; i < _chainIds.length; i++) {
+            monitoredChainIds.push(_chainIds[i]);
+        }
 
         // Subscribe to Swap events on ALL monitored chains
         // Only on Reactive Network (not in test VM)
@@ -126,16 +141,20 @@ contract TrancheFiVolatilityRSC is AbstractReactive {
 
         if (sqrtPriceX96 == 0) return;
 
-        if (lastSqrtPriceX96 > 0) {
-            // Compute squared log-return approximation:
-            // logReturn ≈ 2 * (sqrtPrice - lastSqrtPrice) / lastSqrtPrice
-            // squaredReturn = logReturn² (scaled by 1e18)
-            uint256 squaredReturn = _computeSquaredReturn(lastSqrtPriceX96, sqrtPriceX96);
+        // Update this chain's latest price
+        chainPrices[log.chain_id] = sqrtPriceX96;
+
+        // Compute equal-weighted average across all chains with data
+        uint256 weightedPrice = _computeWeightedPrice();
+
+        if (lastWeightedPrice > 0) {
+            // Compute squared log-return on the COMPOSITE price
+            uint256 squaredReturn = _computeSquaredReturn(lastWeightedPrice, weightedPrice);
 
             // Update EMA: ema = alpha * new + (1 - alpha) * old
             volatilityEMA = (EMA_ALPHA * squaredReturn + (EMA_SCALE - EMA_ALPHA) * volatilityEMA) / EMA_SCALE;
 
-            emit SwapObserved(log.chain_id, sqrtPriceX96, squaredReturn);
+            emit SwapObserved(log.chain_id, sqrtPriceX96, weightedPrice, squaredReturn);
 
             // Check for regime change (only after enough observations for stable EMA)
             observationCount++;
@@ -144,10 +163,34 @@ contract TrancheFiVolatilityRSC is AbstractReactive {
             }
         }
 
-        lastSqrtPriceX96 = sqrtPriceX96;
+        lastWeightedPrice = weightedPrice;
+    }
+
+    // ============ View Helpers ============
+
+    /// @notice Number of chains being monitored
+    function monitoredChainCount() external view returns (uint256) {
+        return monitoredChainIds.length;
     }
 
     // ============ Internal ============
+
+    /// @notice Compute equal-weighted average sqrtPriceX96 across all chains that have reported
+    /// @dev Only includes chains with chainPrices[id] > 0 (at least one swap observed).
+    ///      In production, weights could be based on pool liquidity.
+    function _computeWeightedPrice() internal view returns (uint256) {
+        uint256 totalPrice = 0;
+        uint256 activeChains = 0;
+        for (uint256 i = 0; i < monitoredChainIds.length; i++) {
+            uint256 price = chainPrices[monitoredChainIds[i]];
+            if (price > 0) {
+                totalPrice += price;
+                activeChains++;
+            }
+        }
+        // At least one chain must have data (guaranteed by sqrtPriceX96 > 0 check in react)
+        return totalPrice / activeChains;
+    }
 
     /// @notice Compute squared return from two sqrtPriceX96 values
     /// @dev Uses the approximation: return ≈ 2*(new-old)/old, then squares it
