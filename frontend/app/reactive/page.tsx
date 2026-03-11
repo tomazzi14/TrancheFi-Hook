@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useRef } from "react"
+import { useState, useCallback } from "react"
 import { useAccount, usePublicClient, useWalletClient } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { parseEther, decodeEventLog } from "viem"
@@ -78,11 +78,11 @@ export default function ReactiveDemoPage() {
   const [chainPrices, setChainPrices] = useState<ChainPrice[]>([])
   const [swapCount, setSwapCount] = useState(0)
 
-  const stepRef = useRef(0)
-
   const addLog = useCallback((message: string, type: LogEntry["type"]) => {
-    stepRef.current += 1
-    setLogs((prev) => [...prev, { step: stepRef.current, message, type }])
+    setLogs((prev) => {
+      const nextStep = prev.length > 0 ? prev[prev.length - 1].step + 1 : 1
+      return [...prev, { step: nextStep, message, type }]
+    })
   }, [])
 
   // ─── Volatility Math (port of RSC logic) ───
@@ -106,7 +106,6 @@ export default function ReactiveDemoPage() {
     setIsRunning(true)
     setLogs([])
     setProgress(0)
-    stepRef.current = 0
     setSwapCount(0)
 
     try {

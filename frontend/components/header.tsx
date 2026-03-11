@@ -10,7 +10,6 @@ const NAV_ITEMS = [
   { label: "Deposit", href: "/deposit" },
   { label: "Swap", href: "/swap" },
   { label: "Positions", href: "/positions" },
-  { label: "Simulator", href: "/simulator" },
   { label: "Reactive", href: "/reactive" },
 ]
 
