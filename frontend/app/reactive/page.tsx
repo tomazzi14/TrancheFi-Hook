@@ -168,6 +168,7 @@ export default function ReactiveDemoPage() {
         })
 
         const sellReceipt = await publicClient.waitForTransactionReceipt({ hash: sellHash })
+        await sleep(2000) // wait for nonce to propagate
         const sellPrice = extractPriceFromLogs(sellReceipt.logs)
         if (sellPrice) {
           prices[2] = { ...prices[2], price: sellPrice }
@@ -205,6 +206,7 @@ export default function ReactiveDemoPage() {
         })
 
         const buyReceipt = await publicClient.waitForTransactionReceipt({ hash: buyHash })
+        await sleep(2000) // wait for nonce to propagate
         const buyPrice = extractPriceFromLogs(buyReceipt.logs)
         if (buyPrice) {
           prices[2] = { ...prices[2], price: buyPrice }
@@ -578,6 +580,8 @@ export default function ReactiveDemoPage() {
 }
 
 // ─── Helpers ───
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 function extractPriceFromLogs(
   logs: { topics: string[]; data: string; address: string }[]
