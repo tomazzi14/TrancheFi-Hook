@@ -100,6 +100,13 @@ export default function ReactiveDemoPage() {
     return (change * change) / SCALE
   }
 
+  // Helper to get fresh nonce from the network
+  const getFreshNonce = useCallback(async () => {
+    if (!publicClient || !walletClient) return undefined
+    const [account] = await walletClient.getAddresses()
+    return publicClient.getTransactionCount({ address: account })
+  }, [publicClient, walletClient])
+
   const runDemo = useCallback(async () => {
     if (!publicClient || !walletClient) return
 
@@ -151,6 +158,7 @@ export default function ReactiveDemoPage() {
         // ── Sell mWETH (price drops) ──
         addLog(`Round ${i + 1}/${TOTAL_ROUNDS}: Selling 2 mWETH...`, "swap")
 
+        const sellNonce = await getFreshNonce()
         const sellHash = await walletClient.writeContract({
           address: SWAP_ROUTER_ADDRESS,
           abi: PoolSwapTestABI,
@@ -166,6 +174,7 @@ export default function ReactiveDemoPage() {
             "0x" as `0x${string}`,
           ],
           gas: 500_000n,
+          nonce: sellNonce,
         })
 
         const sellReceipt = await publicClient.waitForTransactionReceipt({ hash: sellHash })
@@ -190,6 +199,7 @@ export default function ReactiveDemoPage() {
         // ── Buy mWETH back (price recovers) ──
         addLog(`Round ${i + 1}/${TOTAL_ROUNDS}: Buying back with 4000 mUSDC...`, "swap")
 
+        const buyNonce = await getFreshNonce()
         const buyHash = await walletClient.writeContract({
           address: SWAP_ROUTER_ADDRESS,
           abi: PoolSwapTestABI,
@@ -205,6 +215,7 @@ export default function ReactiveDemoPage() {
             "0x" as `0x${string}`,
           ],
           gas: 500_000n,
+          nonce: buyNonce,
         })
 
         const buyReceipt = await publicClient.waitForTransactionReceipt({ hash: buyHash })
@@ -269,11 +280,14 @@ export default function ReactiveDemoPage() {
           "callback"
         )
 
+        const adjustNonce = await getFreshNonce()
         const adjustHash = await walletClient.writeContract({
           address: TRANCHES_HOOK_ADDRESS,
           abi: TranchesHookABI,
           functionName: "adjustRiskParameter",
           args: [POOL_KEY, newAPY],
+          gas: 100_000n,
+          nonce: adjustNonce,
         })
 
         await publicClient.waitForTransactionReceipt({ hash: adjustHash })
@@ -304,7 +318,7 @@ export default function ReactiveDemoPage() {
     } finally {
       setIsRunning(false)
     }
-  }, [publicClient, walletClient, addLog])
+  }, [publicClient, walletClient, addLog, getFreshNonce])
 
   // Reset demo: set APY back to 500 bps
   const resetDemo = useCallback(async () => {
@@ -312,11 +326,14 @@ export default function ReactiveDemoPage() {
     setIsRunning(true)
     try {
       addLog("Resetting APY to 500 bps (MEDIUM)...", "info")
+      const resetNonce = await getFreshNonce()
       const hash = await walletClient.writeContract({
         address: TRANCHES_HOOK_ADDRESS,
         abi: TranchesHookABI,
         functionName: "adjustRiskParameter",
         args: [POOL_KEY, 500n],
+        gas: 100_000n,
+        nonce: resetNonce,
       })
       await publicClient.waitForTransactionReceipt({ hash })
       setCurrentAPY(500n)
@@ -332,7 +349,7 @@ export default function ReactiveDemoPage() {
     } finally {
       setIsRunning(false)
     }
-  }, [publicClient, walletClient, addLog])
+  }, [publicClient, walletClient, addLog, getFreshNonce])
 
   if (!isConnected) {
     return (
