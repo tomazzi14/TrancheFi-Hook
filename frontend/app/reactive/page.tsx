@@ -144,12 +144,12 @@ export default function ReactiveDemoPage() {
       let observations = 0n
       let regime = 1 // MEDIUM
       const TOTAL_ROUNDS = 6
-      const SWAP_AMOUNT_ETH = parseEther("5") // 5 mWETH per swap
-      const SWAP_AMOUNT_USDC = parseEther("10000") // 10000 mUSDC per swap
+      const SWAP_AMOUNT_ETH = parseEther("2") // 2 mWETH per swap
+      const SWAP_AMOUNT_USDC = parseEther("4000") // 4000 mUSDC per swap
 
       for (let i = 0; i < TOTAL_ROUNDS; i++) {
         // ── Sell mWETH (price drops) ──
-        addLog(`Round ${i + 1}/${TOTAL_ROUNDS}: Selling 5 mWETH...`, "swap")
+        addLog(`Round ${i + 1}/${TOTAL_ROUNDS}: Selling 2 mWETH...`, "swap")
 
         const sellHash = await walletClient.writeContract({
           address: SWAP_ROUTER_ADDRESS,
@@ -165,6 +165,7 @@ export default function ReactiveDemoPage() {
             { takeClaims: false, settleUsingBurn: false },
             "0x" as `0x${string}`,
           ],
+          gas: 500_000n,
         })
 
         const sellReceipt = await publicClient.waitForTransactionReceipt({ hash: sellHash })
@@ -187,7 +188,7 @@ export default function ReactiveDemoPage() {
         setSwapCount((i * 2) + 1)
 
         // ── Buy mWETH back (price recovers) ──
-        addLog(`Round ${i + 1}/${TOTAL_ROUNDS}: Buying back with 10000 mUSDC...`, "swap")
+        addLog(`Round ${i + 1}/${TOTAL_ROUNDS}: Buying back with 4000 mUSDC...`, "swap")
 
         const buyHash = await walletClient.writeContract({
           address: SWAP_ROUTER_ADDRESS,
@@ -203,6 +204,7 @@ export default function ReactiveDemoPage() {
             { takeClaims: false, settleUsingBurn: false },
             "0x" as `0x${string}`,
           ],
+          gas: 500_000n,
         })
 
         const buyReceipt = await publicClient.waitForTransactionReceipt({ hash: buyHash })
