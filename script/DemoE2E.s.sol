@@ -71,7 +71,7 @@ contract DemoE2E is Script {
         console.log("");
 
         // ── 1. Show initial state ──
-        (uint256 totalSenior, uint256 totalJunior,,,uint256 seniorAPY,) = HOOK.getPoolStats(key);
+        (uint256 totalSenior, uint256 totalJunior,,, uint256 seniorAPY,) = HOOK.getPoolStats(key);
         (uint160 sqrtPrice,,,) = POOL_MANAGER.getSlot0(key.toId());
 
         console.log("[INITIAL STATE]");
@@ -111,7 +111,8 @@ contract DemoE2E is Script {
             amountSpecified: -40_000 ether, // sell 40000 mUSDC
             sqrtPriceLimitX96: 1461446703485210103287273052203988822378723970341 // MAX - 1
         });
-        PoolSwapTest.TestSettings memory settings = PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+        PoolSwapTest.TestSettings memory settings =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
         for (uint256 i = 0; i < 8; i++) {
             // Sell mWETH → price drops
@@ -136,9 +137,16 @@ contract DemoE2E is Script {
 
         string memory regimeName;
         uint256 newAPY;
-        if (currentRegime == 0) { regimeName = "LOW"; newAPY = LOW_VOL_APY; }
-        else if (currentRegime == 1) { regimeName = "MEDIUM"; newAPY = MED_VOL_APY; }
-        else { regimeName = "HIGH"; newAPY = HIGH_VOL_APY; }
+        if (currentRegime == 0) {
+            regimeName = "LOW";
+            newAPY = LOW_VOL_APY;
+        } else if (currentRegime == 1) {
+            regimeName = "MEDIUM";
+            newAPY = MED_VOL_APY;
+        } else {
+            regimeName = "HIGH";
+            newAPY = HIGH_VOL_APY;
+        }
 
         console.log("  Detected Regime:    %s", regimeName);
         console.log("");
