@@ -708,5 +708,30 @@ export const TranchesHookABI = [
       }
     ],
     "anonymous": false
+  },
+  {
+    "type": "function",
+    "name": "adjustRiskParameter",
+    "inputs": [
+      {
+        "name": "key",
+        "type": "tuple",
+        "internalType": "struct PoolKey",
+        "components": [
+          { "name": "currency0", "type": "address", "internalType": "Currency" },
+          { "name": "currency1", "type": "address", "internalType": "Currency" },
+          { "name": "fee", "type": "uint24", "internalType": "uint24" },
+          { "name": "tickSpacing", "type": "int24", "internalType": "int24" },
+          { "name": "hooks", "type": "address", "internalType": "contract IHooks" }
+        ]
+      },
+      {
+        "name": "newSeniorTargetAPY",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   }
 ] as const
