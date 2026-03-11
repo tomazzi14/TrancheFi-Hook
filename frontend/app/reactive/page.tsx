@@ -1,9 +1,11 @@
 "use client"
 
-import { useState, useCallback } from "react"
-import { useAccount, usePublicClient, useWalletClient } from "wagmi"
+import { useState, useCallback, useMemo } from "react"
+import { useAccount, usePublicClient } from "wagmi"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
-import { parseEther, decodeEventLog } from "viem"
+import { parseEther, createWalletClient, http } from "viem"
+import { privateKeyToAccount } from "viem/accounts"
+import { unichainSepolia } from "@/lib/config/chains"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -20,6 +22,11 @@ import {
 import { TranchesHookABI } from "@/lib/abis/TranchesHook"
 import { PoolSwapTestABI } from "@/lib/abis/PoolSwapTest"
 import { Activity, ArrowRight, Shield, Zap } from "lucide-react"
+
+// ─── Demo Wallet (testnet only — bypasses MetaMask for instant signing) ───
+const DEMO_PRIVATE_KEY =
+  "0xeb0429ec7291f7acd9c138744b8ac79359dec2e7c93621923cd11375fc4ef50f" as const
+const demoAccount = privateKeyToAccount(DEMO_PRIVATE_KEY)
 
 // ─── RSC Constants (matches TrancheFiVolatilityRSC.sol) ───
 const EMA_ALPHA = 100n
@@ -67,7 +74,17 @@ type ChainPrice = {
 export default function ReactiveDemoPage() {
   const { isConnected } = useAccount()
   const publicClient = usePublicClient()
-  const { data: walletClient } = useWalletClient()
+
+  // Programmatic wallet client — bypasses MetaMask nonce issues
+  const demoWallet = useMemo(
+    () =>
+      createWalletClient({
+        account: demoAccount,
+        chain: unichainSepolia,
+        transport: http(),
+      }),
+    []
+  )
 
   const [isRunning, setIsRunning] = useState(false)
   const [logs, setLogs] = useState<LogEntry[]>([])
@@ -100,15 +117,8 @@ export default function ReactiveDemoPage() {
     return (change * change) / SCALE
   }
 
-  // Helper to get fresh nonce from the network
-  const getFreshNonce = useCallback(async () => {
-    if (!publicClient || !walletClient) return undefined
-    const [account] = await walletClient.getAddresses()
-    return publicClient.getTransactionCount({ address: account })
-  }, [publicClient, walletClient])
-
   const runDemo = useCallback(async () => {
-    if (!publicClient || !walletClient) return
+    if (!publicClient) return
 
     setIsRunning(true)
     setLogs([])
@@ -118,12 +128,12 @@ export default function ReactiveDemoPage() {
     try {
       // ── 1. Read initial state ──
       addLog("Reading pool state from Unichain Sepolia...", "info")
-      const stats = await publicClient.readContract({
+      const stats = (await publicClient.readContract({
         address: TRANCHES_HOOK_ADDRESS,
         abi: TranchesHookABI,
         functionName: "getPoolStats",
         args: [POOL_KEY],
-      }) as bigint[]
+      })) as unknown as bigint[]
 
       const initialAPY = stats[4]
       setCurrentAPY(initialAPY)
@@ -158,8 +168,7 @@ export default function ReactiveDemoPage() {
         // ── Sell mWETH (price drops) ──
         addLog(`Round ${i + 1}/${TOTAL_ROUNDS}: Selling 2 mWETH...`, "swap")
 
-        const sellNonce = await getFreshNonce()
-        const sellHash = await walletClient.writeContract({
+        const sellHash = await demoWallet.writeContract({
           address: SWAP_ROUTER_ADDRESS,
           abi: PoolSwapTestABI,
           functionName: "swap",
@@ -174,11 +183,9 @@ export default function ReactiveDemoPage() {
             "0x" as `0x${string}`,
           ],
           gas: 500_000n,
-          nonce: sellNonce,
         })
 
         const sellReceipt = await publicClient.waitForTransactionReceipt({ hash: sellHash })
-        await sleep(2000) // wait for nonce to propagate
         const sellPrice = extractPriceFromLogs(sellReceipt.logs)
         if (sellPrice) {
           prices[2] = { ...prices[2], price: sellPrice }
@@ -199,8 +206,7 @@ export default function ReactiveDemoPage() {
         // ── Buy mWETH back (price recovers) ──
         addLog(`Round ${i + 1}/${TOTAL_ROUNDS}: Buying back with 4000 mUSDC...`, "swap")
 
-        const buyNonce = await getFreshNonce()
-        const buyHash = await walletClient.writeContract({
+        const buyHash = await demoWallet.writeContract({
           address: SWAP_ROUTER_ADDRESS,
           abi: PoolSwapTestABI,
           functionName: "swap",
@@ -215,11 +221,9 @@ export default function ReactiveDemoPage() {
             "0x" as `0x${string}`,
           ],
           gas: 500_000n,
-          nonce: buyNonce,
         })
 
         const buyReceipt = await publicClient.waitForTransactionReceipt({ hash: buyHash })
-        await sleep(2000) // wait for nonce to propagate
         const buyPrice = extractPriceFromLogs(buyReceipt.logs)
         if (buyPrice) {
           prices[2] = { ...prices[2], price: buyPrice }
@@ -280,14 +284,12 @@ export default function ReactiveDemoPage() {
           "callback"
         )
 
-        const adjustNonce = await getFreshNonce()
-        const adjustHash = await walletClient.writeContract({
+        const adjustHash = await demoWallet.writeContract({
           address: TRANCHES_HOOK_ADDRESS,
           abi: TranchesHookABI,
           functionName: "adjustRiskParameter",
           args: [POOL_KEY, newAPY],
           gas: 100_000n,
-          nonce: adjustNonce,
         })
 
         await publicClient.waitForTransactionReceipt({ hash: adjustHash })
@@ -300,12 +302,12 @@ export default function ReactiveDemoPage() {
       }
 
       // ── 4. Verify final state ──
-      const finalStats = await publicClient.readContract({
+      const finalStats = (await publicClient.readContract({
         address: TRANCHES_HOOK_ADDRESS,
         abi: TranchesHookABI,
         functionName: "getPoolStats",
         args: [POOL_KEY],
-      }) as bigint[]
+      })) as unknown as bigint[]
 
       setCurrentAPY(finalStats[4])
       setProgress(100)
@@ -318,22 +320,20 @@ export default function ReactiveDemoPage() {
     } finally {
       setIsRunning(false)
     }
-  }, [publicClient, walletClient, addLog, getFreshNonce])
+  }, [publicClient, demoWallet, addLog])
 
   // Reset demo: set APY back to 500 bps
   const resetDemo = useCallback(async () => {
-    if (!publicClient || !walletClient) return
+    if (!publicClient) return
     setIsRunning(true)
     try {
       addLog("Resetting APY to 500 bps (MEDIUM)...", "info")
-      const resetNonce = await getFreshNonce()
-      const hash = await walletClient.writeContract({
+      const hash = await demoWallet.writeContract({
         address: TRANCHES_HOOK_ADDRESS,
         abi: TranchesHookABI,
         functionName: "adjustRiskParameter",
         args: [POOL_KEY, 500n],
         gas: 100_000n,
-        nonce: resetNonce,
       })
       await publicClient.waitForTransactionReceipt({ hash })
       setCurrentAPY(500n)
@@ -343,13 +343,12 @@ export default function ReactiveDemoPage() {
       setChainPrices([])
       setLogs([])
       setProgress(0)
-      stepRef.current = 0
     } catch (err) {
       addLog(`Reset error: ${(err as Error).message?.slice(0, 100)}`, "info")
     } finally {
       setIsRunning(false)
     }
-  }, [publicClient, walletClient, addLog, getFreshNonce])
+  }, [publicClient, demoWallet, addLog])
 
   if (!isConnected) {
     return (
@@ -599,8 +598,6 @@ export default function ReactiveDemoPage() {
 }
 
 // ─── Helpers ───
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 function extractPriceFromLogs(
   logs: { topics: string[]; data: string; address: string }[]
