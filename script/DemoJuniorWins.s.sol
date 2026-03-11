@@ -10,11 +10,8 @@ import {PoolSwapTest} from "v4-core/test/PoolSwapTest.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 interface ITranchesRouter {
-    function addLiquidity(
-        PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata params,
-        uint8 tranche
-    ) external;
+    function addLiquidity(PoolKey calldata key, IPoolManager.ModifyLiquidityParams calldata params, uint8 tranche)
+        external;
 }
 
 /// @title DemoJuniorWins — Create a scenario where Junior earns way more fees than Senior
@@ -64,9 +61,7 @@ contract DemoJuniorWins is Script {
                 SWAP_ROUTER.swap(
                     key,
                     IPoolManager.SwapParams({
-                        zeroForOne: true,
-                        amountSpecified: -int256(swapAmount),
-                        sqrtPriceLimitX96: MIN_PRICE_LIMIT
+                        zeroForOne: true, amountSpecified: -int256(swapAmount), sqrtPriceLimitX96: MIN_PRICE_LIMIT
                     }),
                     settings,
                     ""
