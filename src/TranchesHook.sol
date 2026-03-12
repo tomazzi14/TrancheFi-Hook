@@ -98,6 +98,10 @@ contract TranchesHook is BaseTestHooks {
     /// @dev IL reserve: tokens taken from Junior IL penalties, used to compensate Seniors
     mapping(PoolId => mapping(Currency => uint256)) public ilReserve;
 
+    /// @dev AUDIT7 FIX #3: total tokens reserved for IL across all pools per currency
+    ///      Prevents withdrawFees from consuming tokens earmarked for Senior IL compensation
+    mapping(Currency => uint256) private _reservedForIL;
+
     /// @dev AUDIT4 FIX #1: trusted router for atomic registration
     address public trustedRouter;
 
@@ -225,8 +229,8 @@ contract TranchesHook is BaseTestHooks {
         // AUDIT5 FIX #1: use V4-native liquidity units (decimal-agnostic)
         uint256 amount = uint256(params.liquidityDelta);
 
-        // Senior ratio cap enforced always
-        if (tranche == Tranche.SENIOR) {
+        // Senior ratio cap — only enforced when both tranches have liquidity
+        if (tranche == Tranche.SENIOR && config.totalJuniorLiquidity > 0) {
             uint256 totalAfter = config.totalSeniorLiquidity + config.totalJuniorLiquidity + amount;
             uint256 seniorAfter = config.totalSeniorLiquidity + amount;
             uint256 ratio = (seniorAfter * BASIS_POINTS) / totalAfter;
@@ -379,6 +383,7 @@ contract TranchesHook is BaseTestHooks {
                 if (hookDelta0 > delta.amount0()) hookDelta0 = delta.amount0();
                 POOL_MANAGER.take(key.currency0, address(this), uint128(hookDelta0));
                 ilReserve[poolId][key.currency0] += uint128(hookDelta0);
+                _reservedForIL[key.currency0] += uint128(hookDelta0); // AUDIT7 FIX #3
             } else {
                 hookDelta0 = 0;
             }
@@ -386,6 +391,7 @@ contract TranchesHook is BaseTestHooks {
                 if (hookDelta1 > delta.amount1()) hookDelta1 = delta.amount1();
                 POOL_MANAGER.take(key.currency1, address(this), uint128(hookDelta1));
                 ilReserve[poolId][key.currency1] += uint128(hookDelta1);
+                _reservedForIL[key.currency1] += uint128(hookDelta1); // AUDIT7 FIX #3
             } else {
                 hookDelta1 = 0;
             }
@@ -403,6 +409,7 @@ contract TranchesHook is BaseTestHooks {
                 }
                 if (comp0 > 0) {
                     ilReserve[poolId][key.currency0] -= comp0;
+                    _reservedForIL[key.currency0] -= comp0; // AUDIT7 FIX #3
                     POOL_MANAGER.sync(key.currency0);
                     key.currency0.transfer(address(POOL_MANAGER), comp0);
                     POOL_MANAGER.settle();
@@ -417,6 +424,7 @@ contract TranchesHook is BaseTestHooks {
                 }
                 if (comp1 > 0) {
                     ilReserve[poolId][key.currency1] -= comp1;
+                    _reservedForIL[key.currency1] -= comp1; // AUDIT7 FIX #3
                     POOL_MANAGER.sync(key.currency1);
                     key.currency1.transfer(address(POOL_MANAGER), comp1);
                     POOL_MANAGER.settle();
@@ -443,11 +451,20 @@ contract TranchesHook is BaseTestHooks {
 
     /// @notice DEEP FIX #9: Pull pattern — LP withdraws claimable balance
     /// AUDIT5 FIX #2: supports both native ETH and ERC20 currencies
+    /// AUDIT7 FIX #3: respects IL reserve — can't withdraw tokens earmarked for Senior compensation
     function withdrawFees(Currency currency) external {
         uint256 amount = claimableBalance[msg.sender][currency];
         if (amount == 0) revert NoPendingFees();
 
-        claimableBalance[msg.sender][currency] = 0;
+        // AUDIT7 FIX #3: ensure withdrawal doesn't consume tokens reserved for IL
+        uint256 balance = currency.isAddressZero()
+            ? address(this).balance
+            : IERC20(Currency.unwrap(currency)).balanceOf(address(this));
+        uint256 available = balance > _reservedForIL[currency] ? balance - _reservedForIL[currency] : 0;
+        if (amount > available) amount = available;
+        if (amount == 0) revert NoPendingFees();
+
+        claimableBalance[msg.sender][currency] -= amount; // partial withdrawal if capped
         if (currency.isAddressZero()) {
             (bool success,) = msg.sender.call{value: amount}("");
             require(success, "ETH transfer failed");
@@ -457,8 +474,12 @@ contract TranchesHook is BaseTestHooks {
     }
 
     /// @notice Called by Reactive Network RSC to adjust risk parameters
+    /// AUDIT7 FIX #7: cap at MAX_APY_BIPS to prevent overflow DoS in _distributeWaterfall
+    uint256 public constant MAX_APY_BIPS = 10_000; // 100% max
+
     function adjustRiskParameter(PoolKey calldata key, uint256 newSeniorTargetAPY) external {
         if (msg.sender != authorizedRSC) revert Unauthorized();
+        require(newSeniorTargetAPY <= MAX_APY_BIPS, "APY exceeds max");
         PoolId poolId = key.toId();
         PoolConfig storage config = poolConfigs[poolId];
         if (!config.initialized) revert PoolNotInitialized();
@@ -535,6 +556,8 @@ contract TranchesHook is BaseTestHooks {
         if (currentSqrtPrice == initialPrice) return (0, 0);
 
         // AUDIT6 FIX #1: use tracked position amount, not raw params.liquidityDelta
+        // AUDIT7 FIX #1: bounds check prevents silent truncation
+        require(trackedAmount <= type(uint128).max, "liq overflow");
         uint128 liq = uint128(trackedAmount);
         uint160 sqrtA = TickMath.getSqrtPriceAtTick(params.tickLower);
         uint160 sqrtB = TickMath.getSqrtPriceAtTick(params.tickUpper);
@@ -553,17 +576,27 @@ contract TranchesHook is BaseTestHooks {
 
         if (tranche == Tranche.SENIOR) {
             // Senior compensation: receive excess tokens from IL reserve (negative hookDelta = give to LP)
-            // Use full excess amount; settlement will cap at available reserve
-            if (excess0 > 0) hookDelta0 = -int128(excess0);
-            if (excess1 > 0) hookDelta1 = -int128(excess1);
-        } else {
-            // Junior penalty: take excess tokens (positive hookDelta = take from LP)
-            // Only for tokens where LP has excess
+            // AUDIT7 FIX #1: safe int128 downcast with bounds check
             if (excess0 > 0) {
-                hookDelta0 = int128(excess0 * int256(config.totalSeniorLiquidity) / int256(totalLiq));
+                if (excess0 > int256(type(int128).max)) excess0 = int256(type(int128).max);
+                hookDelta0 = -int128(excess0);
             }
             if (excess1 > 0) {
-                hookDelta1 = int128(excess1 * int256(config.totalSeniorLiquidity) / int256(totalLiq));
+                if (excess1 > int256(type(int128).max)) excess1 = int256(type(int128).max);
+                hookDelta1 = -int128(excess1);
+            }
+        } else {
+            // Junior penalty: take excess tokens (positive hookDelta = take from LP)
+            // AUDIT7 FIX #1: safe int128 downcast with bounds check
+            if (excess0 > 0) {
+                int256 scaled0 = excess0 * int256(config.totalSeniorLiquidity) / int256(totalLiq);
+                if (scaled0 > int256(type(int128).max)) scaled0 = int256(type(int128).max);
+                hookDelta0 = int128(scaled0);
+            }
+            if (excess1 > 0) {
+                int256 scaled1 = excess1 * int256(config.totalSeniorLiquidity) / int256(totalLiq);
+                if (scaled1 > int256(type(int128).max)) scaled1 = int256(type(int128).max);
+                hookDelta1 = int128(scaled1);
             }
         }
     }

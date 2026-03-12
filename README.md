@@ -163,6 +163,45 @@ The codebase has undergone **6 rounds of automated security audits** with iterat
 
 ---
 
+## Live Deployment (Unichain Sepolia)
+
+All contracts are deployed on **Unichain Sepolia** (Chain ID: `1301`).
+
+### Core Contracts
+
+| Contract | Address |
+|----------|---------|
+| **TranchesHook** | [`0xd8dc899d5b6e27359bD30B0Eb75aE594a417D545`](https://sepolia.uniscan.xyz/address/0xd8dc899d5b6e27359bD30B0Eb75aE594a417D545) |
+| **TranchesRouter** | [`0x46D8EFAb0038b1a15E124dd30Fa4cc9cA1d8e3EC`](https://sepolia.uniscan.xyz/address/0x46D8EFAb0038b1a15E124dd30Fa4cc9cA1d8e3EC) |
+| **CallbackReceiver** | [`0x4DE878ECAf2881fBC3f2EC7281a54Fa2D6ee9f55`](https://sepolia.uniscan.xyz/address/0x4DE878ECAf2881fBC3f2EC7281a54Fa2D6ee9f55) |
+| **PoolSwapTest** | [`0xc899912527491b9c82e9663FE14FF62f4BCBD169`](https://sepolia.uniscan.xyz/address/0xc899912527491b9c82e9663FE14FF62f4BCBD169) |
+
+### Infrastructure (Uniswap V4)
+
+| Contract | Address |
+|----------|---------|
+| **PoolManager** | `0x00B036B58a818B1BC34d502D3fE730Db729e62AC` |
+
+### Mock Tokens
+
+| Token | Address | Decimals |
+|-------|---------|----------|
+| **mWETH** | [`0x38747E5317bBC519E194faD3a73daA2D2e1cbF9E`](https://sepolia.uniscan.xyz/address/0x38747E5317bBC519E194faD3a73daA2D2e1cbF9E) | 18 |
+| **mUSDC** | [`0xa86dccA9D2A55c08DE7F7c1a9b6D91D31c40fc9A`](https://sepolia.uniscan.xyz/address/0xa86dccA9D2A55c08DE7F7c1a9b6D91D31c40fc9A) | 18 |
+
+### Pool Configuration
+
+| Parameter | Value |
+|-----------|-------|
+| **Pair** | mWETH / mUSDC |
+| **Fee** | 500 (0.05%) |
+| **Tick Spacing** | 10 |
+| **Initial Price** | 1 mWETH = 2,000 mUSDC |
+| **sqrtPriceX96** | `3543191142285914378072636784640` |
+| **LP Range** | Full range (ticks -887270 to +887270) |
+
+---
+
 ## Getting Started
 
 ### Prerequisites
@@ -192,6 +231,23 @@ forge test -vv
 | `TranchesRouter.t.sol` | 8 | Atomic operations, front-run prevention |
 | `TrancheFiCallbackReceiver.t.sol` | 11 | Callback auth, pool key mgmt, APY updates |
 | `TrancheFiVolatilityRSC.t.sol` | 13 | Volatility EMA, regime changes, overflow safety |
+
+### Deploy to Unichain Sepolia
+
+```bash
+# Set environment
+export PRIVATE_KEY=<your-key>
+export RPC_URL=https://unichain-sepolia.g.alchemy.com/v2/<api-key>
+
+# Deploy hook, router, and receiver
+forge script script/DeployTrancheFi.s.sol --rpc-url $RPC_URL --broadcast
+
+# Initialize pool at 1 ETH = 2000 USDC
+forge script script/InitPool2000.s.sol --rpc-url $RPC_URL --broadcast
+
+# Mint test tokens to a wallet
+forge script script/MintTo.s.sol --rpc-url $RPC_URL --broadcast
+```
 
 ### Format
 
@@ -230,6 +286,13 @@ src/
 ├── TranchesRouter.sol            # Atomic operations router (79 LOC)
 ├── TrancheFiCallbackReceiver.sol # Reactive callback bridge (83 LOC)
 └── TrancheFiVolatilityRSC.sol    # Cross-chain volatility RSC (204 LOC)
+
+script/
+├── DeployTrancheFi.s.sol         # Full deploy: Hook (CREATE2) + Router + Receiver
+├── InitPool2000.s.sol            # Initialize mWETH/mUSDC pool at price 2000
+├── MintTo.s.sol                  # Mint test tokens to a wallet
+├── HookDeployer.sol              # Factory for CREATE2 with DEPLOYER privilege
+└── HookMiner.sol                 # CREATE2 salt miner for hook flag bits
 
 test/
 ├── TranchesHook.t.sol            # 47 tests

@@ -42,7 +42,7 @@ contract DeployTrancheFi is Script {
         // ── 2. Mine CREATE2 salt for hook address ──
         bytes memory creationCode = abi.encodePacked(type(TranchesHook).creationCode, abi.encode(POOL_MANAGER));
 
-        (uint256 salt, address expectedHook) = HookMiner.find(address(factory), HOOK_FLAGS, creationCode, 10_000);
+        (uint256 salt, address expectedHook) = HookMiner.find(address(factory), HOOK_FLAGS, creationCode, 100_000);
 
         console.log("CREATE2 salt found:", salt);
         console.log("Expected hook addr:", expectedHook);

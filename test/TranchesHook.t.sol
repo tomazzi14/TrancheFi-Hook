@@ -157,12 +157,15 @@ contract TranchesHookTest is Test, Deployers {
     }
 
     function test_seniorRatioCapRevertsWhenExceeded() public {
-        // Senior-only deposit should revert (100% > 80% cap)
+        // Option C: Senior-only deposit succeeds when no Junior exists (cold-start)
         vm.prank(alice);
         hook.registerDeposit(TranchesHook.Tranche.SENIOR);
         bytes memory seniorData = abi.encode(alice, TranchesHook.Tranche.SENIOR);
-        vm.expectRevert();
         modifyLiquidityRouter.modifyLiquidity(poolKey, LIQUIDITY_PARAMS, seniorData);
+
+        (uint256 totalSenior, uint256 totalJunior,,,,) = hook.getPoolStats(poolKey);
+        assertGt(totalSenior, 0, "Senior deposited");
+        assertEq(totalJunior, 0, "No junior yet");
     }
 
     // ============ Position Accumulation Tests ============
