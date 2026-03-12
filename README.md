@@ -207,19 +207,15 @@ All contracts are deployed on **Unichain Sepolia** (Chain ID: `1301`).
 ### Prerequisites
 
 - [Foundry](https://book.getfoundry.sh/getting-started/installation)
+- [Bun](https://bun.sh/) (for frontend)
 - Solidity 0.8.26+
 
-### Build
+### Build & Test (Contracts)
 
 ```bash
 git clone --recurse-submodules https://github.com/TrancheFi/tranchesfi.git
 cd tranchesfi
 forge build
-```
-
-### Test
-
-```bash
 forge test -vv
 ```
 
@@ -231,6 +227,37 @@ forge test -vv
 | `TranchesRouter.t.sol` | 8 | Atomic operations, front-run prevention |
 | `TrancheFiCallbackReceiver.t.sol` | 11 | Callback auth, pool key mgmt, APY updates |
 | `TrancheFiVolatilityRSC.t.sol` | 13 | Volatility EMA, regime changes, overflow safety |
+
+### Frontend (Demo UI)
+
+The frontend lives on the `frontend` branch and includes a full interactive demo with Reactive Network scenarios.
+
+```bash
+git checkout frontend
+cd frontend
+bun install
+bun run dev
+```
+
+Open `http://localhost:3000` — the app includes:
+
+| Page | Route | Description |
+|------|-------|-------------|
+| **Dashboard** | `/` | Pool overview, TVL, fee stats |
+| **Deposit** | `/deposit` | Deposit as Senior or Junior LP |
+| **Swap** | `/swap` | Execute swaps on the mWETH/mUSDC pool |
+| **Positions** | `/positions` | View and manage LP positions |
+| **Reactive Demo** | `/reactive` | **E2E demo**: select a market scenario, watch swaps trigger volatility detection and on-chain APY adjustment |
+
+The Reactive Demo page has 3 scenarios:
+
+| Scenario | Swap Size | Expected Regime | Senior APY |
+|----------|-----------|-----------------|------------|
+| **Calm Market** | 0.3 mWETH / 600 mUSDC | LOW | 3% |
+| **Volatile Market** | 5 mWETH / 10000 mUSDC | HIGH | 10% |
+| **Recovery** | Large → Small swaps | HIGH → MEDIUM | 10% → 5% |
+
+> **Note**: The demo uses a programmatic wallet (testnet only) to bypass MetaMask nonce issues. Connect any wallet on Unichain Sepolia to unlock the UI.
 
 ### Deploy to Unichain Sepolia
 
@@ -291,6 +318,7 @@ script/
 ├── DeployTrancheFi.s.sol         # Full deploy: Hook (CREATE2) + Router + Receiver
 ├── InitPool2000.s.sol            # Initialize mWETH/mUSDC pool at price 2000
 ├── MintTo.s.sol                  # Mint test tokens to a wallet
+├── DemoE2E.s.sol                 # On-chain E2E demo script
 ├── HookDeployer.sol              # Factory for CREATE2 with DEPLOYER privilege
 └── HookMiner.sol                 # CREATE2 salt miner for hook flag bits
 
@@ -299,6 +327,19 @@ test/
 ├── TranchesRouter.t.sol          # 8 tests
 ├── TrancheFiCallbackReceiver.t.sol # 11 tests
 └── TrancheFiVolatilityRSC.t.sol  # 13 tests
+
+frontend/                         # (on `frontend` branch)
+├── app/                          # Next.js App Router pages
+│   ├── page.tsx                  # Dashboard
+│   ├── deposit/page.tsx          # Senior/Junior deposit
+│   ├── swap/page.tsx             # Swap interface
+│   ├── positions/page.tsx        # LP positions
+│   └── reactive/page.tsx         # Reactive Network E2E demo
+├── components/                   # UI components (shadcn/ui)
+├── lib/
+│   ├── abis/                     # Contract ABIs
+│   └── config/                   # Addresses, chains, wagmi config
+└── package.json                  # Bun + Next.js 16 + wagmi + RainbowKit
 ```
 
 ---
