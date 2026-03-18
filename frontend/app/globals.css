@@ -74,8 +74,8 @@
   --chart-4: oklch(0.7 0.12 300);
   --chart-5: oklch(0.8 0.1 200);
   --radius: 0.625rem;
-  --senior: oklch(0.65 0.18 250);
-  --junior: oklch(0.72 0.18 55);
+  --senior: oklch(0.65 0.19 255);
+  --junior: oklch(0.72 0.19 50);
   --sidebar: oklch(0.18 0.01 260);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.65 0.2 265);
@@ -96,4 +96,108 @@
   html {
     @apply font-sans;
   }
+}
+
+/* ─── Landing page animations ───────────────────────────────────────── */
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-12px); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+@keyframes gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-float { animation: float 6s ease-in-out infinite; }
+.animate-float-delay { animation: float 6s ease-in-out 2s infinite; }
+.animate-pulse-glow { animation: pulse-glow 4s ease-in-out infinite; }
+.animate-gradient {
+  background-size: 200% 200%;
+  animation: gradient-shift 8s ease infinite;
+}
+.animate-fade-up { animation: fade-up 0.7s ease-out both; }
+.animate-fade-up-d1 { animation: fade-up 0.7s ease-out 0.1s both; }
+.animate-fade-up-d2 { animation: fade-up 0.7s ease-out 0.2s both; }
+.animate-fade-up-d3 { animation: fade-up 0.7s ease-out 0.3s both; }
+.animate-fade-up-d4 { animation: fade-up 0.7s ease-out 0.4s both; }
+.animate-fade-up-d5 { animation: fade-up 0.7s ease-out 0.5s both; }
+.animate-scale-in { animation: scale-in 0.6s ease-out both; }
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 3s infinite;
+}
+
+/* Glassmorphism card */
+.glass {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.glass-hover {
+  transition: all 0.3s ease;
+}
+.glass-hover:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+/* Glow effects */
+.glow-senior {
+  box-shadow: 0 0 40px rgba(96, 140, 255, 0.15), inset 0 0 40px rgba(96, 140, 255, 0.03);
+}
+.glow-junior {
+  box-shadow: 0 0 40px rgba(255, 160, 60, 0.15), inset 0 0 40px rgba(255, 160, 60, 0.03);
+}
+.glow-primary {
+  box-shadow: 0 0 60px rgba(140, 100, 255, 0.2);
+}
+
+/* Gradient text */
+.text-gradient-primary {
+  background: linear-gradient(135deg, #a78bfa, #7c3aed, #60a5fa, #a78bfa);
+  background-size: 300% 300%;
+  animation: gradient-shift 6s ease infinite;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.text-gradient-senior {
+  background: linear-gradient(135deg, #60a5fa, #3b82f6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.text-gradient-junior {
+  background: linear-gradient(135deg, #fb923c, #f97316);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
