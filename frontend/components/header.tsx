@@ -5,6 +5,7 @@ import { ConnectButton } from "@rainbow-me/rainbowkit"
 import { usePathname } from "next/navigation"
 import { useAccount } from "wagmi"
 import { cn } from "@/lib/utils"
+import { Github } from "lucide-react"
 
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/" },
@@ -45,13 +46,23 @@ export function Header() {
           )}
         </div>
 
-        {isConnected && (
-          <ConnectButton
-            chainStatus="icon"
-            showBalance={false}
-            accountStatus="address"
-          />
-        )}
+        <div className="flex items-center gap-3">
+          <a
+            href="https://github.com/tomazzi14/TrancheFi-Hook"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/50 transition-colors"
+          >
+            <Github className="h-4.5 w-4.5" />
+          </a>
+          {isConnected && (
+            <ConnectButton
+              chainStatus="icon"
+              showBalance={false}
+              accountStatus="address"
+            />
+          )}
+        </div>
       </div>
     </header>
   )
