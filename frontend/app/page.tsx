@@ -1,8 +1,11 @@
 "use client"
 
+import { useState } from "react"
 import { useAccount } from "wagmi"
+import Link from "next/link"
 import { PoolStats } from "@/components/dashboard/pool-stats"
 import { TrancheSplit } from "@/components/dashboard/tranche-split"
+import { ReactiveOracleModal } from "@/components/dashboard/reactive-oracle-modal"
 import { ConnectButton } from "@rainbow-me/rainbowkit"
 import {
   Shield,
@@ -17,6 +20,8 @@ import {
   Lock,
   Flame,
   BarChart3,
+  Plus,
+  Radio,
 } from "lucide-react"
 
 function LandingPage() {
@@ -393,6 +398,7 @@ function LandingPage() {
 
 export default function Home() {
   const { isConnected } = useAccount()
+  const [oracleOpen, setOracleOpen] = useState(false)
 
   if (!isConnected) {
     return <LandingPage />
@@ -406,8 +412,49 @@ export default function Home() {
           Pool overview and tranche distribution
         </p>
       </div>
+
+      {/* Action buttons */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Link
+          href="/user"
+          className="group relative overflow-hidden rounded-2xl border border-violet-500/20 bg-gradient-to-br from-violet-500/10 via-transparent to-violet-500/5 p-5 transition-all hover:border-violet-500/40 hover:shadow-lg hover:shadow-violet-500/5"
+        >
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-500/15 ring-1 ring-violet-500/20 group-hover:bg-violet-500/25 transition-colors">
+              <Plus className="h-5 w-5 text-violet-400" />
+            </div>
+            <div>
+              <p className="font-semibold text-white text-lg">Provide Liquidity</p>
+              <p className="text-sm text-zinc-500">Deposit into Senior or Junior tranches</p>
+            </div>
+          </div>
+          <ArrowRight className="absolute right-5 top-1/2 -translate-y-1/2 h-5 w-5 text-zinc-600 group-hover:text-violet-400 group-hover:translate-x-1 transition-all" />
+        </Link>
+
+        <button
+          onClick={() => setOracleOpen(true)}
+          className="group relative overflow-hidden rounded-2xl border border-blue-500/20 bg-gradient-to-br from-blue-500/10 via-transparent to-orange-500/5 p-5 text-left transition-all hover:border-blue-500/40 hover:shadow-lg hover:shadow-blue-500/5"
+        >
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-500/15 ring-1 ring-blue-500/20 group-hover:bg-blue-500/25 transition-colors">
+              <Radio className="h-5 w-5 text-blue-400" />
+            </div>
+            <div>
+              <p className="font-semibold text-white text-lg">Reactive Oracle</p>
+              <p className="text-sm text-zinc-500">ETH price on Unichain · Ethereum · Base</p>
+            </div>
+          </div>
+          <div className="absolute right-5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-green-400 animate-pulse" />
+            <span className="text-xs text-zinc-600 group-hover:text-zinc-400 transition-colors">Live</span>
+          </div>
+        </button>
+      </div>
+
       <PoolStats />
       <TrancheSplit />
+
+      <ReactiveOracleModal open={oracleOpen} onOpenChange={setOracleOpen} />
     </div>
   )
 }

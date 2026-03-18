@@ -10,8 +10,6 @@ const NAV_ITEMS = [
   { label: "Dashboard", href: "/" },
   { label: "My Account", href: "/user" },
   { label: "Swap", href: "/swap" },
-  { label: "Simulator", href: "/simulator" },
-  { label: "Reactive", href: "/reactive" },
 ]
 
 export function Header() {
