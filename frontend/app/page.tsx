@@ -406,9 +406,11 @@ export default function Home() {
 
   return (
     <div className="flex flex-col gap-8">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground">
+      <div className="animate-fade-up">
+        <h1 className="text-3xl font-extrabold tracking-tight">
+          <span className="text-gradient-primary">Dashboard</span>
+        </h1>
+        <p className="text-zinc-500 mt-1">
           Pool overview and tranche distribution
         </p>
       </div>
