@@ -4,10 +4,7 @@ import { useUserPosition } from "@/hooks/useUserPosition"
 import { usePendingFees } from "@/hooks/usePendingFees"
 import { usePoolStats } from "@/hooks/usePoolStats"
 import { usePoolPrice } from "@/hooks/usePoolPrice"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Separator } from "@/components/ui/separator"
 import { formatEth, liquidityToAmounts } from "@/lib/utils"
 import { Shield, Zap } from "lucide-react"
 
@@ -21,16 +18,12 @@ export function PositionCard() {
 
   if (isLoading) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Your Position</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Skeleton className="h-6 w-32" />
-          <Skeleton className="h-6 w-48" />
-          <Skeleton className="h-6 w-40" />
-        </CardContent>
-      </Card>
+      <div className="glass rounded-2xl p-6 space-y-4">
+        <p className="text-sm font-semibold text-white">Your Position</p>
+        <Skeleton className="h-6 w-32" />
+        <Skeleton className="h-6 w-48" />
+        <Skeleton className="h-6 w-40" />
+      </div>
     )
   }
 
@@ -57,103 +50,102 @@ export function PositionCard() {
 
   if (!hasPosition) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Your Position</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground">
-            No active position. Go to{" "}
-            <a href="/deposit" className="text-primary underline">
-              Deposit
-            </a>{" "}
-            to get started.
-          </p>
-        </CardContent>
-      </Card>
+      <div className="glass rounded-2xl p-6 text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-500/10 ring-1 ring-violet-500/20 mx-auto mb-4">
+          <Shield className="h-5 w-5 text-violet-400" />
+        </div>
+        <p className="text-sm font-semibold text-white mb-1">No Active Position</p>
+        <p className="text-xs text-zinc-500">
+          Switch to the Deposit tab to provide liquidity.
+        </p>
+      </div>
     )
   }
 
+  const accentColor = isSenior ? "blue" : "orange"
+  const accentGradient = isSenior
+    ? "from-transparent via-blue-500/40 to-transparent"
+    : "from-transparent via-orange-500/40 to-transparent"
+
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>Your Position</CardTitle>
-        <Badge
-          variant="outline"
-          className={
-            isSenior
-              ? "border-senior text-senior"
-              : "border-junior text-junior"
-          }
-        >
-          {isSenior ? (
-            <Shield className="mr-1 h-3 w-3" />
-          ) : (
-            <Zap className="mr-1 h-3 w-3" />
-          )}
+    <div className="glass relative overflow-hidden rounded-2xl p-6">
+      <div className={`absolute top-0 left-0 right-0 h-px bg-gradient-to-r ${accentGradient}`} />
+
+      <div className="flex items-center justify-between mb-5">
+        <h3 className="text-sm font-semibold text-white">Your Position</h3>
+        <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
+          isSenior
+            ? "bg-blue-500/10 text-blue-400 ring-1 ring-blue-500/20"
+            : "bg-orange-500/10 text-orange-400 ring-1 ring-orange-500/20"
+        }`}>
+          {isSenior ? <Shield className="h-3 w-3" /> : <Zap className="h-3 w-3" />}
           {isSenior ? "Senior" : "Junior"}
-        </Badge>
-      </CardHeader>
-      <CardContent className="space-y-4">
+        </span>
+      </div>
+
+      <div className="space-y-5">
+        {/* Deposited Value */}
         <div>
-          <p className="text-sm text-muted-foreground mb-2">Deposited Value</p>
+          <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">Deposited Value</p>
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-lg bg-muted/50 p-3">
-              <p className="text-xs text-muted-foreground">mWETH</p>
-              <p className="text-lg font-semibold">{estimatedMwethNum.toFixed(4)}</p>
+            <div className="glass rounded-xl p-3">
+              <p className="text-[10px] text-zinc-600 uppercase tracking-wider">mWETH</p>
+              <p className="text-lg font-bold text-white mt-0.5">{estimatedMwethNum.toFixed(4)}</p>
             </div>
-            <div className="rounded-lg bg-muted/50 p-3">
-              <p className="text-xs text-muted-foreground">mUSDC</p>
-              <p className="text-lg font-semibold">{estimatedMusdcNum.toFixed(2)}</p>
+            <div className="glass rounded-xl p-3">
+              <p className="text-[10px] text-zinc-600 uppercase tracking-wider">mUSDC</p>
+              <p className="text-lg font-bold text-white mt-0.5">{estimatedMusdcNum.toFixed(2)}</p>
             </div>
           </div>
         </div>
 
-        <Separator />
+        <div className="h-px bg-gradient-to-r from-transparent via-zinc-800 to-transparent" />
 
+        {/* Stats */}
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <p className="text-sm text-muted-foreground">Liquidity Units</p>
-            <p className="text-xl font-semibold">
+            <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Liquidity Units</p>
+            <p className="text-xl font-bold text-white mt-0.5">
               {formatEth(liquidityAmount)}
             </p>
           </div>
           <div>
-            <p className="text-sm text-muted-foreground">Deposit Block</p>
-            <p className="text-xl font-semibold">
+            <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Deposit Block</p>
+            <p className="text-xl font-bold text-white mt-0.5 font-mono">
               #{(depositBlock as bigint).toString()}
             </p>
           </div>
         </div>
 
-        <Separator />
+        <div className="h-px bg-gradient-to-r from-transparent via-zinc-800 to-transparent" />
 
+        {/* Pending Fees */}
         <div>
-          <p className="text-sm text-muted-foreground mb-2">Pending Fees</p>
+          <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">Pending Fees</p>
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-lg bg-muted/50 p-3">
-              <p className="text-xs text-muted-foreground">mWETH</p>
-              <p className="text-lg font-semibold">{formatEth(pending0 as bigint)}</p>
+            <div className="glass rounded-xl p-3">
+              <p className="text-[10px] text-zinc-600 uppercase tracking-wider">mWETH</p>
+              <p className="text-lg font-bold text-green-400 mt-0.5">{formatEth(pending0 as bigint)}</p>
             </div>
-            <div className="rounded-lg bg-muted/50 p-3">
-              <p className="text-xs text-muted-foreground">mUSDC</p>
-              <p className="text-lg font-semibold">{formatEth(pending1 as bigint)}</p>
+            <div className="glass rounded-xl p-3">
+              <p className="text-[10px] text-zinc-600 uppercase tracking-wider">mUSDC</p>
+              <p className="text-lg font-bold text-green-400 mt-0.5">{formatEth(pending1 as bigint)}</p>
             </div>
           </div>
         </div>
 
         {totalLiquidity > 0n && (
           <>
-            <Separator />
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Your share of pool</span>
-              <span className="font-medium">
+            <div className="h-px bg-gradient-to-r from-transparent via-zinc-800 to-transparent" />
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-zinc-500">Your share of pool</span>
+              <span className="text-sm font-bold text-white">
                 {((Number(liquidityAmount) / Number(totalLiquidity)) * 100).toFixed(2)}%
               </span>
             </div>
           </>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }

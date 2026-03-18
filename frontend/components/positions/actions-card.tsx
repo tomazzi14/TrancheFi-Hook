@@ -7,10 +7,8 @@ import { useRemoveLiquidity } from "@/hooks/useRemoveLiquidity"
 import { usePoolPrice } from "@/hooks/usePoolPrice"
 import { POOL_KEY } from "@/lib/config/contracts"
 import { liquidityToAmounts, amount0ToLiquidity } from "@/lib/utils"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Separator } from "@/components/ui/separator"
 import { toast } from "sonner"
 import { Loader2, Coins, LogOut } from "lucide-react"
 
@@ -102,12 +100,10 @@ export function ActionsCard() {
   }
 
   const handleRemove = () => {
-    // Convert mWETH amount → liquidity units using V4 math
     const wethVal = Number(wethAmount)
     if (!wethVal || wethVal <= 0) return
     const wethWei = BigInt(Math.floor(wethVal * 1e18))
     const liquidityToRemove = amount0ToLiquidity(wethWei, sqrtPriceX96)
-    // Cap at position total to avoid over-removal
     const capped = liquidityToRemove > liquidityAmount ? liquidityAmount : liquidityToRemove
     removeLiquidity(capped)
   }
@@ -120,30 +116,31 @@ export function ActionsCard() {
   const hasAmount = wethAmount && Number(wethAmount) > 0
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Actions</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-6">
+    <div className="glass relative overflow-hidden rounded-2xl p-6">
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-violet-500/30 to-transparent" />
+
+      <h3 className="text-sm font-semibold text-white mb-5">Actions</h3>
+
+      <div className="flex flex-col gap-6">
+        {/* Claim Fees Section */}
         <div>
-          <h3 className="mb-2 text-sm font-medium">Claim Fees</h3>
-          <p className="mb-3 text-xs text-muted-foreground">
-            Step 1: Move pending fees to claimable balance. Step 2: Withdraw
-            each token to your wallet.
+          <p className="text-[10px] font-semibold text-blue-400 uppercase tracking-widest mb-2">Claim Fees</p>
+          <p className="mb-3 text-xs text-zinc-500 leading-relaxed">
+            Step 1: Move pending fees to claimable balance. Step 2&3: Withdraw each token.
           </p>
-          <div className="flex gap-3">
+          <div className="flex gap-2">
             <Button
               onClick={claimFees}
               disabled={isClaiming || isClaimConfirming}
               variant="outline"
-              className="flex-1"
+              className="flex-1 border-blue-500/20 text-blue-300 hover:bg-blue-500/10 hover:border-blue-500/40"
             >
               {isClaiming || isClaimConfirming ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
                 <Coins className="mr-2 h-4 w-4" />
               )}
-              1. Claim Fees
+              1. Claim
             </Button>
             <Button
               onClick={() =>
@@ -151,12 +148,12 @@ export function ActionsCard() {
               }
               disabled={isWithdrawing || isWithdrawConfirming}
               variant="outline"
-              className="flex-1"
+              className="flex-1 border-zinc-800 text-zinc-300 hover:bg-zinc-800/50"
             >
               {isWithdrawing || isWithdrawConfirming ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : null}
-              2. Withdraw mWETH
+              2. mWETH
             </Button>
             <Button
               onClick={() =>
@@ -164,31 +161,35 @@ export function ActionsCard() {
               }
               disabled={isWithdrawing || isWithdrawConfirming}
               variant="outline"
-              className="flex-1"
+              className="flex-1 border-zinc-800 text-zinc-300 hover:bg-zinc-800/50"
             >
               {isWithdrawing || isWithdrawConfirming ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : null}
-              3. Withdraw mUSDC
+              3. mUSDC
             </Button>
           </div>
         </div>
 
-        <Separator />
+        <div className="h-px bg-gradient-to-r from-transparent via-zinc-800 to-transparent" />
 
+        {/* Remove Liquidity Section */}
         <div>
           <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-medium">Remove Liquidity</h3>
-            <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={handleMax}>
+            <p className="text-[10px] font-semibold text-red-400 uppercase tracking-widest">Remove Liquidity</p>
+            <button
+              onClick={handleMax}
+              className="text-xs text-violet-400 hover:text-violet-300 transition-colors"
+            >
               Max
-            </Button>
+            </button>
           </div>
 
           {/* mWETH input */}
           <div className="mb-3">
             <div className="mb-1 flex items-center justify-between">
-              <label className="text-xs text-muted-foreground">mWETH</label>
-              <span className="text-xs text-muted-foreground">
+              <label className="text-[10px] text-zinc-500 uppercase tracking-wider">mWETH</label>
+              <span className="text-[10px] text-zinc-600 font-mono">
                 Max: {maxWeth.toFixed(4)}
               </span>
             </div>
@@ -197,6 +198,7 @@ export function ActionsCard() {
               placeholder="0.0"
               value={wethAmount}
               onChange={(e) => handleWethChange(e.target.value)}
+              className="bg-zinc-900/50 border-zinc-800 focus:border-red-500/50 focus:ring-red-500/20"
               min="0"
               step="0.01"
             />
@@ -205,8 +207,8 @@ export function ActionsCard() {
           {/* mUSDC input */}
           <div className="mb-4">
             <div className="mb-1 flex items-center justify-between">
-              <label className="text-xs text-muted-foreground">mUSDC</label>
-              <span className="text-xs text-muted-foreground">
+              <label className="text-[10px] text-zinc-500 uppercase tracking-wider">mUSDC</label>
+              <span className="text-[10px] text-zinc-600 font-mono">
                 Max: {maxUsdc.toFixed(2)}
               </span>
             </div>
@@ -215,20 +217,22 @@ export function ActionsCard() {
               placeholder="0.0"
               value={usdcAmount}
               onChange={(e) => handleUsdcChange(e.target.value)}
+              className="bg-zinc-900/50 border-zinc-800 focus:border-red-500/50 focus:ring-red-500/20"
               min="0"
               step="1"
             />
           </div>
 
-          <p className="mb-3 text-center text-xs text-muted-foreground">
-            1 mWETH = {currentPrice.toFixed(2)} mUSDC
-          </p>
+          <div className="glass rounded-lg px-4 py-2 text-center mb-4">
+            <p className="text-xs text-zinc-500">
+              1 mWETH = <span className="text-zinc-400 font-mono">{currentPrice.toFixed(2)}</span> mUSDC
+            </p>
+          </div>
 
           <Button
             onClick={handleRemove}
             disabled={!hasAmount || isRemoving || isRemoveConfirming}
-            variant="destructive"
-            className="w-full"
+            className="w-full bg-red-600/80 hover:bg-red-500/80 text-white border-0 shadow-lg shadow-red-500/10"
             size="lg"
           >
             {isRemoving || isRemoveConfirming ? (
@@ -244,7 +248,7 @@ export function ActionsCard() {
             )}
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }

@@ -157,8 +157,8 @@ export function DepositForm({ tranche }: DepositFormProps) {
       {/* mWETH Input */}
       <div>
         <div className="mb-2 flex items-center justify-between">
-          <label className="text-sm font-medium">mWETH</label>
-          <span className="text-xs text-muted-foreground">
+          <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">mWETH</label>
+          <span className="text-xs text-zinc-600">
             Balance: {formatBalance(wethBalance as bigint, 18)}
           </span>
         </div>
@@ -168,7 +168,7 @@ export function DepositForm({ tranche }: DepositFormProps) {
             placeholder="0.0"
             value={wethAmount}
             onChange={(e) => handleWethChange(e.target.value)}
-            className="text-lg"
+            className="text-lg bg-zinc-900/50 border-zinc-800 focus:border-violet-500/50 focus:ring-violet-500/20"
             min="0"
             step="0.01"
           />
@@ -178,12 +178,12 @@ export function DepositForm({ tranche }: DepositFormProps) {
               disabled={isApprovingWETH || isConfirmingWETH}
               variant="outline"
               size="sm"
-              className="shrink-0"
+              className="shrink-0 border-violet-500/30 text-violet-300 hover:bg-violet-500/10"
             >
               {isApprovingWETH || isConfirmingWETH ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : isSuccessWETH ? (
-                <CheckCircle2 className="h-4 w-4" />
+                <CheckCircle2 className="h-4 w-4 text-green-400" />
               ) : (
                 "Approve"
               )}
@@ -192,15 +192,17 @@ export function DepositForm({ tranche }: DepositFormProps) {
         </div>
       </div>
 
-      <p className="text-center text-xs text-muted-foreground">
-        1 mWETH ≈ {currentRate.toFixed(2)} mUSDC
-      </p>
+      <div className="glass rounded-lg px-4 py-2 text-center">
+        <p className="text-xs text-zinc-500">
+          1 mWETH ≈ <span className="text-zinc-400 font-mono">{currentRate.toFixed(2)}</span> mUSDC
+        </p>
+      </div>
 
       {/* mUSDC Input */}
       <div>
         <div className="mb-2 flex items-center justify-between">
-          <label className="text-sm font-medium">mUSDC</label>
-          <span className="text-xs text-muted-foreground">
+          <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">mUSDC</label>
+          <span className="text-xs text-zinc-600">
             Balance: {formatBalance(usdcBalance as bigint, 18)}
           </span>
         </div>
@@ -210,7 +212,7 @@ export function DepositForm({ tranche }: DepositFormProps) {
             placeholder="0.0"
             value={usdcAmount}
             onChange={(e) => handleUsdcChange(e.target.value)}
-            className="text-lg"
+            className="text-lg bg-zinc-900/50 border-zinc-800 focus:border-violet-500/50 focus:ring-violet-500/20"
             min="0"
             step="1"
           />
@@ -220,12 +222,12 @@ export function DepositForm({ tranche }: DepositFormProps) {
               disabled={isApprovingUSDC || isConfirmingUSDC}
               variant="outline"
               size="sm"
-              className="shrink-0"
+              className="shrink-0 border-violet-500/30 text-violet-300 hover:bg-violet-500/10"
             >
               {isApprovingUSDC || isConfirmingUSDC ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : isSuccessUSDC ? (
-                <CheckCircle2 className="h-4 w-4" />
+                <CheckCircle2 className="h-4 w-4 text-green-400" />
               ) : (
                 "Approve"
               )}
@@ -243,7 +245,7 @@ export function DepositForm({ tranche }: DepositFormProps) {
           isDepositing ||
           isDepositConfirming
         }
-        className="w-full"
+        className="w-full bg-violet-600 hover:bg-violet-500 text-white shadow-lg shadow-violet-500/20 hover:shadow-violet-500/30 transition-all"
         size="lg"
       >
         {isDepositing || isDepositConfirming ? (
