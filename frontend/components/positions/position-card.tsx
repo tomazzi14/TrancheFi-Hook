@@ -41,7 +41,8 @@ export function PositionCard() {
   const totalLiquidity = totalSenior + totalJunior
 
   // Convert liquidity units to estimated token amounts using Uniswap V4 math
-  const { amount0: estMwethWei, amount1: estMusdcWei } = liquidityToAmounts(
+  // Note: currency0 = mUSDC (lower address), currency1 = mWETH (higher address)
+  const { amount0: estMusdcWei, amount1: estMwethWei } = liquidityToAmounts(
     liquidityAmount,
     posSqrtPrice
   )
@@ -125,11 +126,11 @@ export function PositionCard() {
           <div className="grid grid-cols-2 gap-3">
             <div className="glass rounded-xl p-3">
               <p className="text-[10px] text-zinc-600 uppercase tracking-wider">mWETH</p>
-              <p className="text-lg font-bold text-green-400 mt-0.5">{formatEth(pending0 as bigint)}</p>
+              <p className="text-lg font-bold text-green-400 mt-0.5">{formatEth(pending1 as bigint)}</p>
             </div>
             <div className="glass rounded-xl p-3">
               <p className="text-[10px] text-zinc-600 uppercase tracking-wider">mUSDC</p>
-              <p className="text-lg font-bold text-green-400 mt-0.5">{formatEth(pending1 as bigint)}</p>
+              <p className="text-lg font-bold text-green-400 mt-0.5">{formatEth(pending0 as bigint)}</p>
             </div>
           </div>
         </div>
