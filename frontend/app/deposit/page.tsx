@@ -29,6 +29,30 @@ export default function DepositPage() {
           <DepositForm tranche={tranche} />
         </CardContent>
       </Card>
+
+      {/* Aqua0 Integration */}
+      <Card className="border-emerald-500/30 bg-emerald-950/10">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-emerald-400">
+                Aqua0 Shared Liquidity
+              </h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                Deposit once, amplify across TrancheFi + multiple pools simultaneously
+              </p>
+            </div>
+            <a
+              href="http://localhost:8080/dashboard"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-emerald-500 transition-colors"
+            >
+              Provide Liquidity via Aqua0 →
+            </a>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

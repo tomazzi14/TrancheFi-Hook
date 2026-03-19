@@ -50,17 +50,18 @@ export function usePoolPrice() {
     const rawTick = Number((raw >> 160n) & 0xffffffn)
     tick = rawTick >= 0x800000 ? rawTick - 0x1000000 : rawTick
 
-    // price = (sqrtPriceX96 / 2^96)^2 = sqrtPriceX96^2 / 2^192
-    // For better precision with large numbers, use intermediate calculation
+    // price = (sqrtPriceX96 / 2^96)^2 = token1/token0 = mWETH/mUSDC
+    // We invert to get "1 mWETH = X mUSDC" for display
     if (sqrtPriceX96 > 0n) {
       const sqrtPrice = Number(sqrtPriceX96) / 2 ** 96
-      price = sqrtPrice * sqrtPrice
+      const rawPrice = sqrtPrice * sqrtPrice // mWETH per mUSDC (e.g. 0.0005)
+      price = rawPrice > 0 ? 1 / rawPrice : 0 // mUSDC per mWETH (e.g. 2000)
     }
   }
 
   return {
     sqrtPriceX96,
-    price, // 1 token0 (mWETH) = price token1 (mUSDC)
+    price, // 1 mWETH = price mUSDC (e.g. 2000)
     tick,
     ...rest,
   }

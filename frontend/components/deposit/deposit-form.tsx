@@ -133,9 +133,10 @@ export function DepositForm({ tranche }: DepositFormProps) {
 
   const trancheLabel = tranche === 0 ? "Senior" : "Junior"
 
-  // Convert mWETH amount → V4 liquidity units using: L = amount0 * sqrtPrice / Q96
-  const liquidityDelta = parsedWETH > 0n && sqrtPriceX96 > 0n
-    ? amount0ToLiquidity(parsedWETH, sqrtPriceX96)
+  // Convert mUSDC amount → V4 liquidity units using: L = amount0 * sqrtPrice / Q96
+  // Note: mUSDC is now currency0 (lower address) after Aqua0 token integration
+  const liquidityDelta = parsedUSDC > 0n && sqrtPriceX96 > 0n
+    ? amount0ToLiquidity(parsedUSDC, sqrtPriceX96)
     : 0n
 
   const handleDeposit = () => {

@@ -15,19 +15,18 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 contract InitPool2000 is Script {
     IPoolManager constant POOL_MANAGER = IPoolManager(0x00B036B58a818B1BC34d502D3fE730Db729e62AC);
 
-    // Existing deployed hook (same hook, new pool)
-    address constant HOOK = 0xd8dc899d5b6e27359bD30B0Eb75aE594a417D545;
+    // Freshly deployed hook + router (with Aqua0 tokens)
+    address constant HOOK = 0x14a3324f394B9972D35B739CDa511d90c15BD545;
+    address constant ROUTER = 0xDafC18cdB29245383854F730a25A2f09cfEBEe6E;
 
-    // Existing TranchesRouter
-    address constant ROUTER = 0x46D8EFAb0038b1a15E124dd30Fa4cc9cA1d8e3EC;
+    // Aqua0 shared tokens (Unichain Sepolia)
+    address constant MUSDC = 0x73c56ddD816e356387Caf740c804bb9D379BE47E; // currency0 (lower address)
+    address constant MWETH = 0x7fF28651365c735c22960E27C2aFA97AbE4Cf2Ad; // currency1 (higher address)
 
-    // Existing mock tokens
-    address constant MWETH = 0x38747E5317bBC519E194faD3a73daA2D2e1cbF9E; // currency0 (lower)
-    address constant MUSDC = 0xa86dccA9D2A55c08DE7F7c1a9b6D91D31c40fc9A; // currency1 (higher)
-
-    // sqrtPriceX96 for price = 2000 (1 mWETH = 2000 mUSDC)
-    // sqrt(2000) * 2^96 = 3543191142285914378072636784640
-    uint160 constant SQRT_PRICE_2000 = 3543191142285914378072636784640;
+    // sqrtPriceX96 for price = 1/2000 (currency1/currency0 = mWETH/mUSDC = 0.0005)
+    // With mUSDC as currency0: sqrt(1/2000) * 2^96 = 1771595571142957112070504448
+    // Means 1 mWETH = 2000 mUSDC ✓
+    uint160 constant SQRT_PRICE_2000 = 1771595571142957112070504448;
 
     // Wallets to approve
     address constant WALLET_1 = 0x5ba6C6F599C74476d335B7Ad34C97F9c842e8734;
@@ -40,8 +39,8 @@ contract InitPool2000 is Script {
 
         // ── 1. Initialize NEW pool with fee=500, tickSpacing=10, price=2000 ──
         PoolKey memory key = PoolKey({
-            currency0: Currency.wrap(MWETH),
-            currency1: Currency.wrap(MUSDC),
+            currency0: Currency.wrap(MUSDC),  // lower address = currency0
+            currency1: Currency.wrap(MWETH),  // higher address = currency1
             fee: 500,
             tickSpacing: 10,
             hooks: IHooks(HOOK)
